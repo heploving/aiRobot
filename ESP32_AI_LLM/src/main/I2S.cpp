@@ -1,9 +1,9 @@
 #include "I2S.h"
 #define SAMPLE_RATE (8000)
 // 定义麦克风引脚
-#define PIN_I2S_BCLK 1
-#define PIN_I2S_LRC 2
-#define PIN_I2S_DIN 14
+#define PIN_I2S_BCLK 5
+#define PIN_I2S_LRC 6
+#define PIN_I2S_DIN 7
 // #define PIN_I2S_DOUT 25
 
 const i2s_port_t I2S_PORT = I2S_NUM_0;
@@ -33,10 +33,14 @@ I2S::I2S()
   pin_config.ws_io_num = PIN_I2S_LRC;
   pin_config.data_out_num = I2S_PIN_NO_CHANGE;
   pin_config.data_in_num = PIN_I2S_DIN;
-  pin_config.mck_io_num = GPIO_NUM_0; // Set MCLK to GPIO0
-  i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
-  i2s_set_pin(I2S_NUM_0, &pin_config);
-  i2s_set_clk(I2S_NUM_0, SAMPLE_RATE, BITS_PER_SAMPLE, I2S_CHANNEL_STEREO);
+  pin_config.mck_io_num = I2S_PIN_NO_CHANGE; // INMP441 不需要 MCLK，GPIO0 在 S3 上会导致引脚配置失败
+  esp_err_t err;
+  err = i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
+  if (err != ESP_OK) { log_e("i2s_driver_install failed: %s", esp_err_to_name(err)); }
+  err = i2s_set_pin(I2S_NUM_0, &pin_config);
+  if (err != ESP_OK) { log_e("i2s_set_pin failed: %s", esp_err_to_name(err)); }
+  err = i2s_set_clk(I2S_NUM_0, SAMPLE_RATE, BITS_PER_SAMPLE, I2S_CHANNEL_STEREO);
+  if (err != ESP_OK) { log_e("i2s_set_clk failed: %s", esp_err_to_name(err)); }
 }
 
 int I2S::Read(char *data, int numData)

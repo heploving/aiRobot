@@ -1,8 +1,7 @@
 #include "Web_Scr_set.h"
 
 // 创建屏幕对象
-TFT_eSPI tft = TFT_eSPI();  // 创建TFT对象
-U8g2_for_TFT_eSPI u8g2;
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);
 
 // AP模式的SSID和密码
 const char *ap_ssid = "ESP32-Setup";
@@ -51,9 +50,11 @@ void handleMusicManagement(AsyncWebServerRequest *request)
 // 添加或更新wifi信息逻辑
 void handleSave(AsyncWebServerRequest *request)
 {
-    tft.fillScreen(TFT_WHITE);
+    u8g2.clearBuffer();
+    u8g2.sendBuffer();
     u8g2.setCursor(0, 11);
     u8g2.print("进入网络配置！");
+    u8g2.sendBuffer();
 
     Serial.println("Start Save!");
     String ssid = request->arg("ssid");
@@ -90,9 +91,11 @@ void handleSave(AsyncWebServerRequest *request)
 // 删除wifi信息逻辑
 void handleDelete(AsyncWebServerRequest *request)
 {
-    tft.fillScreen(TFT_WHITE);
+    u8g2.clearBuffer();
+    u8g2.sendBuffer();
     u8g2.setCursor(0, 11);
     u8g2.print("进入网络配置！");
+    u8g2.sendBuffer();
 
     Serial.println("Start Delete!");
     String ssidToDelete = request->arg("ssid");
@@ -159,9 +162,11 @@ void handleList(AsyncWebServerRequest *request)
 // 添加或更新音乐信息逻辑
 void handleSaveMusic(AsyncWebServerRequest *request)
 {
-    tft.fillScreen(TFT_WHITE);
+    u8g2.clearBuffer();
+    u8g2.sendBuffer();
     u8g2.setCursor(0, 11);
     u8g2.print("进入音乐配置！");
+    u8g2.sendBuffer();
 
     Serial.println("Start Save Music!");
     String musicName = request->arg("musicName");
@@ -198,9 +203,11 @@ void handleSaveMusic(AsyncWebServerRequest *request)
 // 删除音乐信息逻辑
 void handleDeleteMusic(AsyncWebServerRequest *request)
 {
-    tft.fillScreen(TFT_WHITE);
+    u8g2.clearBuffer();
+    u8g2.sendBuffer();
     u8g2.setCursor(0, 11);
     u8g2.print("进入音乐配置！");
+    u8g2.sendBuffer();
 
     Serial.println("Start Delete Music!");
     String musicNameToDelete = request->arg("musicName");

@@ -2,15 +2,12 @@
 
 // 定义引脚
 #define key 0       //boot按键引脚
-#define led 8       //板载led引脚
-#define light 38     // 灯光引脚
+#define led 48      //板载led引脚（GPIO8 已被 OLED SCL 占用）
+#define light 38    // 灯光引脚
 // 定义音频放大模块的I2S引脚定义
-#define I2S_DOUT 5 // DIN引脚
-#define I2S_BCLK 6 // BCLK引脚
-#define I2S_LRC 7  // LRC引脚
-
-//  优先事项！！！一定要做，不做的话麦克风会因为引脚冲突无法工作
-//  找到.pio\libdeps\esp32-s3-devkitc-1\TFT_eSPI路径下的User_Setup.h文件，删除它，然后将根目录下的User_Setup.h文件剪切粘贴过去
+#define I2S_DOUT 17 // DIN引脚
+#define I2S_BCLK 15 // BCLK引脚
+#define I2S_LRC 16  // LRC引脚
 
 int llm = 1;    // 大模型选择参数:0:豆包，1：讯飞星火，2：通义千问，3：ChatGPT
 
@@ -32,8 +29,8 @@ String apiUrl_chatgpt = "https://aihubmix.com/v1/chat/completions"; // Chatgpt�
 
 // 讯飞stt和大模型服务的参数
 String APPID = "57c3792c";                             // App ID,必填
-String APISecret = "65a56f0fb36ded9cdb86817db855fbe0"; // API Secret，必填
-String APIKey = "YmZlOTk1NDhjYmFjYzk1N2I0MjRlYWUy";    // API Key，必填
+String APISecret = "YmZlOTk1NDhjYmFjYzk1N2I0MjRlYWUy"; // API Secret，必填
+String APIKey = "65a56f0fb36ded9cdb86817db855fbe0";    // API Key，必填
 String appId1 = APPID;
 String domain1 = "4.0Ultra";    // 根据需要更改
 String websockets_server = "ws://spark-api.xf-yun.com/v4.0/chat";   // 根据需要更改
@@ -126,7 +123,8 @@ void voicePlay()
             if (text_temp != "" && flag == 1)
             {
                 // 清空屏幕
-                tft.fillScreen(TFT_WHITE);
+                u8g2.clearBuffer();
+                u8g2.sendBuffer();
                 // 显示剩余的文字
                 displayWrappedText(text_temp.c_str(), 0, 11, width);
                 text_temp = "";
@@ -135,7 +133,8 @@ void voicePlay()
             else if (flag == 1)
             {
                 // 清空屏幕
-                tft.fillScreen(TFT_WHITE);
+                u8g2.clearBuffer();
+                u8g2.sendBuffer();
                 displayWrappedText(subAnswers[subindex].c_str(), 0, 11, width);
             }
             subindex++;
@@ -147,7 +146,8 @@ void voicePlay()
             if (text_temp != "" && flag == 1)
             {
                 // 清空屏幕
-                tft.fillScreen(TFT_WHITE);
+                u8g2.clearBuffer();
+                u8g2.sendBuffer();
                 // 显示剩余的文字
                 displayWrappedText(text_temp.c_str(), 0, 11, width);
                 text_temp = "";
@@ -156,7 +156,8 @@ void voicePlay()
             else if (flag == 1)
             {
                 // 清空屏幕
-                tft.fillScreen(TFT_WHITE);
+                u8g2.clearBuffer();
+                u8g2.sendBuffer();
                 displayWrappedText(Answer.c_str(), 0, 11, width);
             }
             Answer = "";
@@ -180,7 +181,8 @@ void voicePlay()
         Serial.println(audioStreamURL.c_str());
         audio2.connecttohost(audioStreamURL.c_str());
         
-        tft.fillRect(0, cursorY, width, 50, TFT_WHITE);
+        u8g2.clearBuffer();
+        u8g2.sendBuffer();
         askquestion = "正在顺序播放所有音乐，当前正在播放：" + musicName;
         Serial.println(askquestion);
         // 打印内容
@@ -216,20 +218,11 @@ void StartConversation()
 
 void imageshow()
 {
-    tft.fillScreen(TFT_WHITE);
-    int count = 2;
-    while (count)
+    // OLED 屏无壁纸功能，仅保留音频循环轮询
+    for (int j = 0; j < 200; j++)
     {
-        for (int i = 0;i < bizhi_size;i++)
-        {
-            tft.pushImage(0, 0, width, height, bizhi[i]);   // 用于壁纸显示的代码
-            for (int j=0;j<100;j++)     // 每隔一秒显示一张，同时保证显示壁纸时可以正常播放语音
-            {
-                audio2.loop();
-                delay(10);
-            }
-        }
-        count--;
+        audio2.loop();
+        delay(10);
     }
     image_show = 0;
 }
@@ -251,21 +244,17 @@ void setup()
     digitalWrite(light, LOW);
 
     // 初始化屏幕
-    tft.init();
-    tft.setRotation(0);        // 设置屏幕方向，0-3顺时针转
-    tft.setSwapBytes(true);
-    tft.fillScreen(TFT_WHITE);   // 设置屏幕背景为白色
-    tft.setTextColor(TFT_BLACK); //设置字体颜色为黑色
-    tft.setTextWrap(true);  // 开启文本自动换行，只支持英文
+    Wire.begin(8, 9);                    // OLED I2C: SCL=GPIO8, SDA=GPIO9
+    u8g2.begin();                        // SSD1306 0.96寸 OLED，默认地址 0x3C
 
     // 初始化U8g2
-    u8g2.begin(tft);
     u8g2.setFont(u8g2_font_wqy12_t_gb2312); // 设置中文字体库
     u8g2.setFontMode(1);                    // 设置字体模式为透明模式，不设置的话中文字符会变成一个黑色方块
-    u8g2.setForegroundColor(TFT_BLACK);     // 设置字体颜色为黑色
+    u8g2.setDrawColor(1);                   // 单色屏: 1=点亮
     // 显示文字
     u8g2.setCursor(0, 11);
     u8g2.print("已开机！");
+    u8g2.sendBuffer();
 
     // 初始化音频模块audio1
     audio1.init();
@@ -279,6 +268,7 @@ void setup()
     // 连接网络
     u8g2.setCursor(0, u8g2.getCursorY() + 12);
     u8g2.print("正在连接网络······");
+    u8g2.sendBuffer();
     int result = wifiConnect();
 
     // 从百度服务器获取当前时间
@@ -290,7 +280,8 @@ void setup()
     if (result == 1)
     {
         // 清空屏幕，在屏幕上输出提示信息
-        tft.fillScreen(TFT_WHITE);
+        u8g2.clearBuffer();
+        u8g2.sendBuffer();
         u8g2.setCursor(0, 11);
         u8g2.print("网络连接成功！");
         displayWrappedText("请进行语音唤醒或按boot键开始对话！", 0, u8g2.getCursorY() + 12, width);
@@ -412,6 +403,7 @@ void displayWrappedText(const string &text1, int x, int y, int maxWidth)
             break;
         }
     }
+    u8g2.sendBuffer();
 }
 
 // 显示文本
@@ -456,12 +448,12 @@ void getText(String role, String content)
     jsoncon.clear();
 
     // 打印角色
-    tft.print(role);
-    tft.print(": ");
+    u8g2.setCursor(0, u8g2.getCursorY() + 2);
+    u8g2.print(role);
+    u8g2.print(": ");
 
     // 打印内容
-    displayWrappedText(content.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
-    tft.setCursor(0, u8g2.getCursorY() + 2);
+    displayWrappedText(content.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
 
     // 也可以使用格式化的方式输出JSON，以下代码被注释掉了
     // serializeJsonPretty(text, Serial);
@@ -625,8 +617,6 @@ void processResponse(int status)
 
                 // 获取最终转换的文本
                 getText("assistant", subAnswer1);
-                tft.setCursor(54, 152);
-                tft.print(loopcount);
                 flag = 1;
 
                 // 更新Answer，去掉已处理的部分
@@ -651,8 +641,6 @@ void processResponse(int status)
                 Serial.println(subAnswer1);
                 audio2.connecttospeech(subAnswer1.c_str(), "zh");
                 getText("assistant", subAnswer1);
-                tft.setCursor(54, 152);
-                tft.print(loopcount);
                 flag = 1;
                 Answer = Answer.substring(lastCommaIndex + 3);
                 subAnswer1.clear();
@@ -665,8 +653,6 @@ void processResponse(int status)
                 Serial.println(subAnswer1);
                 audio2.connecttospeech(subAnswer1.c_str(), "zh");
                 getText("assistant", subAnswer1);
-                tft.setCursor(54, 152);
-                tft.print(loopcount);
                 flag = 1;
                 Answer = Answer.substring(Answer.length());
                 subAnswer1.clear();
@@ -746,8 +732,6 @@ void processResponse(int status)
         audio2.connecttospeech(Answer.c_str(), "zh");
         // 显示最终转换的文本
         getText("assistant", Answer);
-        tft.setCursor(54, 152);
-        tft.print(loopcount);
         Answer = "";
         conflag = 1;
         startPlay = true;
@@ -871,10 +855,10 @@ void VolumeSet()
         Serial.print("当前音量为: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        tft.fillRect(66, 152, 62, 7, TFT_WHITE);
-        tft.setCursor(66, 152);
-        tft.print("volume:");
-        tft.print(volume);
+        u8g2.setCursor(88, 0);
+        u8g2.print("音量:");
+        u8g2.print(volume);
+        u8g2.sendBuffer();
     }
     else if (numberStr.length() > 0)
     {
@@ -883,10 +867,10 @@ void VolumeSet()
         Serial.print("音量已调到: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        tft.fillRect(66, 152, 62, 7, TFT_WHITE);
-        tft.setCursor(66, 152);
-        tft.print("volume:");
-        tft.print(volume);
+        u8g2.setCursor(88, 0);
+        u8g2.print("音量:");
+        u8g2.print(volume);
+        u8g2.sendBuffer();
     }
     else if (askquestion.indexOf("最") > -1 && (askquestion.indexOf("高") > -1 || askquestion.indexOf("大") > -1))
     {
@@ -895,10 +879,10 @@ void VolumeSet()
         Serial.print("音量已调到: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        tft.fillRect(66, 152, 62, 7, TFT_WHITE);
-        tft.setCursor(66, 152);
-        tft.print("volume:");
-        tft.print(volume);
+        u8g2.setCursor(88, 0);
+        u8g2.print("音量:");
+        u8g2.print(volume);
+        u8g2.sendBuffer();
     }
     else if (askquestion.indexOf("高") > -1 || askquestion.indexOf("大") > -1)
     {
@@ -911,10 +895,10 @@ void VolumeSet()
         Serial.print("音量已调到: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        tft.fillRect(66, 152, 62, 7, TFT_WHITE);
-        tft.setCursor(66, 152);
-        tft.print("volume:");
-        tft.print(volume);
+        u8g2.setCursor(88, 0);
+        u8g2.print("音量:");
+        u8g2.print(volume);
+        u8g2.sendBuffer();
     }
     else if (askquestion.indexOf("最") > -1 && (askquestion.indexOf("低") > -1 || askquestion.indexOf("小") > -1))
     {
@@ -923,10 +907,10 @@ void VolumeSet()
         Serial.print("音量已调到: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        tft.fillRect(66, 152, 62, 7, TFT_WHITE);
-        tft.setCursor(66, 152);
-        tft.print("volume:");
-        tft.print(volume);
+        u8g2.setCursor(88, 0);
+        u8g2.print("音量:");
+        u8g2.print(volume);
+        u8g2.sendBuffer();
     }
     else if (askquestion.indexOf("低") > -1 || askquestion.indexOf("小") > -1)
     {
@@ -939,10 +923,10 @@ void VolumeSet()
         Serial.print("音量已调到: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        tft.fillRect(66, 152, 62, 7, TFT_WHITE);
-        tft.setCursor(66, 152);
-        tft.print("volume:");
-        tft.print(volume);
+        u8g2.setCursor(88, 0);
+        u8g2.print("音量:");
+        u8g2.print(volume);
+        u8g2.sendBuffer();
     }
     conflag = 1;
 }
@@ -950,11 +934,12 @@ void VolumeSet()
 
 void response()
 {
-    tft.fillScreen(TFT_WHITE);
-    tft.setCursor(0, 0);
-    tft.print("assistant: ");
+    u8g2.clearBuffer();
+    u8g2.sendBuffer();
+    u8g2.setCursor(0, 0);
+    u8g2.print("assistant: ");
     audio2.connecttospeech(Answer.c_str(), "zh");
-    displayWrappedText(Answer.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+    displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
     Answer = "";
 }
 
@@ -1074,15 +1059,15 @@ void onMessageCallback1(WebsocketsMessage message)
             {
                 // 断开当前WiFi连接
                 WiFi.disconnect(true);
-                tft.fillScreen(TFT_WHITE);
-                tft.setCursor(0, 0);
-                displayWrappedText("网络连接已断开，请重启设备以再次建立连接！", tft.getCursorX(), tft.getCursorY() + 11, width);
+                u8g2.clearBuffer();
+                u8g2.sendBuffer();
+                u8g2.setCursor(0, 0);
+                displayWrappedText("网络连接已断开，请重启设备以再次建立连接！", u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                 openWeb();
                 displayWrappedText("热点ESP32-Setup已开启，密码为12345678，可在浏览器中打开http://192.168.4.1进行网络和音乐信息配置！", 0, u8g2.getCursorY() + 12, width);
             }
             else if (audio2.isplaying == 1 && askquestion.indexOf("暂停") > -1)
             {
-                tft.fillRect(0, 148, 50, 12, TFT_WHITE);     // 清空左下角的“请说话！”提示
                 if(audio2.isRunning())
                 {   
                     Serial.println("已经暂停！");
@@ -1095,7 +1080,6 @@ void onMessageCallback1(WebsocketsMessage message)
             }
             else if (audio2.isplaying == 1 && askquestion.indexOf("恢复") > -1)
             {
-                tft.fillRect(0, 148, 50, 12, TFT_WHITE);     // 清空左下角的“请说话！”提示
                 if(!audio2.isRunning())
                 {   
                     Serial.println("已经恢复！");
@@ -1108,18 +1092,15 @@ void onMessageCallback1(WebsocketsMessage message)
             }
             else if (askquestion.indexOf("声音") > -1 || askquestion.indexOf("音量") > -1)
             {
-                tft.fillRect(0, 148, 50, 12, TFT_WHITE);     // 清空左下角的“请说话！”提示
                 VolumeSet();    //  调整音量
             }
             else if (askquestion.indexOf("开") > -1 && askquestion.indexOf("灯") > -1)
             {
-                tft.fillRect(0, 148, 50, 12, TFT_WHITE);     // 清空左下角的“请说话！”提示
                 digitalWrite(light, HIGH);
                 conflag = 1;
             }
             else if (askquestion.indexOf("关") > -1 && askquestion.indexOf("灯") > -1)
             {
-                tft.fillRect(0, 148, 50, 12, TFT_WHITE);     // 清空左下角的“请说话！”提示
                 digitalWrite(light, LOW);
                 conflag = 1;
             }
@@ -1156,12 +1137,13 @@ void onMessageCallback1(WebsocketsMessage message)
             }
             else if (conStatus == 1)
             {
-                tft.fillScreen(TFT_WHITE);
-                tft.setCursor(0, 0);
-                tft.print("user: ");
-                displayWrappedText(askquestion.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                u8g2.clearBuffer();
+                u8g2.sendBuffer();
+                u8g2.setCursor(0, 0);
+                u8g2.print("user: ");
+                displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                 cursorY = u8g2.getCursorY() + 1;
-                tft.setCursor(0, u8g2.getCursorY() + 2);
+                u8g2.setCursor(0, u8g2.getCursorY() + 2);
 
                 String musicName = "";
                 String musicID = "";
@@ -1173,10 +1155,10 @@ void onMessageCallback1(WebsocketsMessage message)
                 if (askquestion.indexOf("不想") > -1 || askquestion.indexOf("暂停") > -1)
                 {
                     musicplay = 0;
-                    tft.print("assistant: ");
+                    u8g2.print("assistant: ");
                     Answer = "好的，那主人还有其它吩咐吗？喵~";
                     audio2.connecttospeech(Answer.c_str(), "zh");
-                    displayWrappedText(Answer.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                    displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                     Answer = "";
                     conStatus = 0;
                     conflag = 1;
@@ -1198,7 +1180,7 @@ void onMessageCallback1(WebsocketsMessage message)
                     else
                         askquestion = "正在顺序播放所有音乐，当前正在播放：" + musicName;
                     Serial.println(askquestion);
-                    displayWrappedText(askquestion.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                     startPlay = true;   // 设置播放开始标志
                     if (musicplay == 0)
                     {
@@ -1224,7 +1206,7 @@ void onMessageCallback1(WebsocketsMessage message)
                     else
                         askquestion = "正在顺序播放所有音乐，当前正在播放：" + musicName;
                     Serial.println(askquestion);
-                    displayWrappedText(askquestion.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                     startPlay = true;   // 设置播放开始标志
                     if (musicplay == 0)
                     {
@@ -1249,7 +1231,7 @@ void onMessageCallback1(WebsocketsMessage message)
                     else
                         askquestion = "正在顺序播放所有音乐，当前正在播放：" + musicName;
                     Serial.println(askquestion);
-                    displayWrappedText(askquestion.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                     startPlay = true;   // 设置播放开始标志
                     if (musicplay == 0)
                     {
@@ -1313,10 +1295,10 @@ void onMessageCallback1(WebsocketsMessage message)
                     if (musicID == "") 
                     {
                         Serial.println("未找到对应的音乐！");
-                        tft.print("assistant: ");
+                        u8g2.print("assistant: ");
                         Answer = "主人，曲库里还没有这首歌哦，换一首吧，喵~";
                         audio2.connecttospeech(Answer.c_str(), "zh");
-                        displayWrappedText(Answer.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                        displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                         Answer = "";
                         conflag = 1;
                     } 
@@ -1331,7 +1313,7 @@ void onMessageCallback1(WebsocketsMessage message)
                         else
                             askquestion = "正在顺序播放所有音乐，当前正在播放：" + musicName;
                         Serial.println(askquestion);
-                        displayWrappedText(askquestion.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                        displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                         startPlay = true;   // 设置播放开始标志
                         if (musicplay == 0)
                         {
@@ -1345,8 +1327,9 @@ void onMessageCallback1(WebsocketsMessage message)
                 {
                     musicplay = 0;
                     conStatus = 0;
-                    tft.fillScreen(TFT_WHITE);
-                    tft.setCursor(0, 0);
+                    u8g2.clearBuffer();
+                u8g2.sendBuffer();
+                    u8g2.setCursor(0, 0);
                     getText("user", askquestion);
                     if (askquestion.indexOf("天气") > -1 || askquestion.indexOf("几点了") > -1 || askquestion.indexOf("日期") > -1)
                         ConnServer();
@@ -1376,12 +1359,13 @@ void onMessageCallback1(WebsocketsMessage message)
             }
             else if (((askquestion.indexOf("听") > -1 || askquestion.indexOf("放") > -1) && (askquestion.indexOf("歌") > -1 || askquestion.indexOf("音乐") > -1) && askquestion.indexOf("九歌") == -1) || mainStatus == 1)
             {
-                tft.fillScreen(TFT_WHITE);
-                tft.setCursor(0, 0);
-                tft.print("user: ");
-                displayWrappedText(askquestion.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                u8g2.clearBuffer();
+                u8g2.sendBuffer();
+                u8g2.setCursor(0, 0);
+                u8g2.print("user: ");
+                displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                 cursorY = u8g2.getCursorY() + 1;
-                tft.setCursor(0, u8g2.getCursorY() + 2);
+                u8g2.setCursor(0, u8g2.getCursorY() + 2);
 
                 String musicName = "";
                 String musicID = "";
@@ -1391,10 +1375,10 @@ void onMessageCallback1(WebsocketsMessage message)
                 if (askquestion.indexOf("不想") > -1)
                 {
                     mainStatus = 0;
-                    tft.print("assistant: ");
+                    u8g2.print("assistant: ");
                     Answer = "好的，那主人还有其它吩咐吗？喵~";
                     audio2.connecttospeech(Answer.c_str(), "zh");
-                    displayWrappedText(Answer.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                    displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                     Answer = "";
                     conflag = 1;
                     return;
@@ -1454,10 +1438,10 @@ void onMessageCallback1(WebsocketsMessage message)
                 {
                     mainStatus = 1;
                     Serial.println("未找到对应的音乐！");
-                    tft.print("assistant: ");
+                    u8g2.print("assistant: ");
                     Answer = "好的喵，主人，你想听哪首歌呢，喵~";
                     audio2.connecttospeech(Answer.c_str(), "zh");
-                    displayWrappedText(Answer.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                    displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                     Answer = "";
                     conflag = 1;
                 } 
@@ -1474,7 +1458,7 @@ void onMessageCallback1(WebsocketsMessage message)
                     else
                         askquestion = "开始顺序播放所有音乐，当前正在播放：" + musicName;
                     Serial.println(askquestion);
-                    displayWrappedText(askquestion.c_str(), tft.getCursorX(), tft.getCursorY() + 11, width);
+                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
                     startPlay = true;   // 设置播放开始标志
                     conStatus = 1;
                     if (musicplay == 0)
@@ -1488,8 +1472,9 @@ void onMessageCallback1(WebsocketsMessage message)
             }
             else if (askquestion.indexOf("放") > -1 && (askquestion.indexOf("图片") > -1 || askquestion.indexOf("幻灯片") > -1))
             {
-                tft.fillScreen(TFT_WHITE);
-                tft.setCursor(0, 0);
+                u8g2.clearBuffer();
+                u8g2.sendBuffer();
+                u8g2.setCursor(0, 0);
                 getText("user", askquestion);
                 Answer = "这就开始放映主人喜欢的图片，喵~";
                 audio2.connecttospeech(Answer.c_str(), "zh");
@@ -1500,8 +1485,9 @@ void onMessageCallback1(WebsocketsMessage message)
             }
             else    // 处理一般的问答请求
             {
-                tft.fillScreen(TFT_WHITE);
-                tft.setCursor(0, 0);
+                u8g2.clearBuffer();
+                u8g2.sendBuffer();
+                u8g2.setCursor(0, 0);
                 getText("user", askquestion);
                 if (askquestion.indexOf("天气") > -1 || askquestion.indexOf("几点了") > -1 || askquestion.indexOf("日期") > -1)
                     ConnServer();
@@ -1552,24 +1538,50 @@ void onEventsCallback1(WebsocketsEvent event, String data)
 
         if (await_flag == 1)
         {
-            tft.fillScreen(TFT_WHITE);
+            u8g2.clearBuffer();
+            u8g2.sendBuffer();
             u8g2.setCursor(0, 11);
             u8g2.print("待机中......");
+            u8g2.sendBuffer();
         }
         else if (conflag == 1)
         {
-            tft.fillScreen(TFT_WHITE);
+            u8g2.clearBuffer();
+            u8g2.sendBuffer();
             u8g2.setCursor(0, 11);
             u8g2.print("连续对话中，请说话！");
+            u8g2.sendBuffer();
         }
         else
         {
-            u8g2.setCursor(0, 159);
+            u8g2.setCursor(0, 59);
             u8g2.print("请说话！");
+            u8g2.sendBuffer();
         }
         conflag = 0;
 
         Serial.println("开始录音");
+        // 自适应噪音门限：采样约1.5秒，取最小8帧均值作为环境底噪
+        {
+            float vals[20];
+            for (int i = 0; i < 20; i++)
+            {
+                audio1.Record();
+                vals[i] = calculateRMS((uint8_t *)audio1.wavData[0], 1280);
+            }
+            float sumLow = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                float mn = vals[0]; int mi = 0;
+                for (int j = 1; j < 20; j++)
+                    if (vals[j] < mn) { mn = vals[j]; mi = j; }
+                sumLow += mn;
+                vals[mi] = 1e9f;
+            }
+            float ambient = sumLow / 8;
+            noise = (int)max(ambient * 2.0f, 400.0f);
+            Serial.printf("NOISE ambient=%.1f noise=%d\n", ambient, noise);
+        }
         // 无限循环，用于录制和发送音频数据
         while (1)
         {
@@ -1597,6 +1609,16 @@ void onEventsCallback1(WebsocketsEvent event, String data)
                 rms = 8.6;
             }
             printf("%d %f\n", 0, rms);
+
+            // stt连接断开时结束本次录音，避免系统卡死在录音循环
+            if (!webSocketClient1.available())
+            {
+                Serial.println("stt连接断开，结束本次录音");
+                await_flag = 1;
+                awake_flag = 0;
+                webSocketClient1.close();
+                return;
+            }
 
             if(null_voice >= 80)    // 如果从录音开始过了8秒才说话，讯飞stt识别会超时，所以直接结束本次录音，重新开始录音
             {
@@ -1846,7 +1868,8 @@ int wifiConnect()
         }
     }
     // 清空屏幕
-    tft.fillScreen(TFT_WHITE);
+    u8g2.clearBuffer();
+    u8g2.sendBuffer();
     // 在屏幕上输出提示信息
     u8g2.setCursor(0, 11);
     u8g2.print("网络连接失败！请检查");

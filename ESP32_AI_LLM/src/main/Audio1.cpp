@@ -86,8 +86,9 @@ void Audio1::Record()
   i2s->Read(i2sBuffer, i2sBufferSize);
   for (int i = 0; i < i2sBufferSize / 8; ++i)
   {
-    wavData[0][2 * i] = i2sBuffer[8 * i + 2];
-    wavData[0][2 * i + 1] = i2sBuffer[8 * i + 3];
+    // 实测: 音频数据在每帧第二个 32 位字的高 16 位（字节 6-7）
+    wavData[0][2 * i] = i2sBuffer[8 * i + 6];
+    wavData[0][2 * i + 1] = i2sBuffer[8 * i + 7];
   }
 
   // client.print("\r\n");
