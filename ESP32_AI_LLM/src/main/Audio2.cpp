@@ -1030,7 +1030,7 @@ bool Audio2::connecttospeech(const char *speech, const char *lang)
     strcat(resp, "tex=");
     strcat(resp, speechBuff);
     // TODO: tok 已过期，请替换为你自己申请的新 access_token（见 README 部署教程）
-    strcat(resp, "&tok=24.06b1e2f1939821627c64d2c7e93584bb.2592000.1792844311.282335-124379004");
+    strcat(resp, "&tok=24.06b1e2f1939821627c64d2c7e93584bb.2592000.1792844311.282335-124379004&");
     strcat(resp, "cuid=MNOSvF72O7JZ2KrqZAnIEbY4KBn3repX&");
     strcat(resp, "ctp=1&");
     strcat(resp, "lan=zh&");
