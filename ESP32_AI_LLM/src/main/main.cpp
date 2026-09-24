@@ -263,12 +263,12 @@ void setup()
     u8g2.begin();                        // SSD1306 0.96寸 OLED
 
     // 初始化U8g2
-    u8g2.setFont(u8g2_font_unifont_t_chinese3); // UTF-8 中文字体
+    u8g2.setFont(u8g2_font_wqy12_t_chinese3); // 12px UTF-8 中文字体
     u8g2.enableUTF8Print();                     // 启用 UTF-8 打印
     u8g2.setFontMode(1);                    // 设置字体模式为透明模式，不设置的话中文字符会变成一个黑色方块
     u8g2.setDrawColor(1);                   // 单色屏: 1=点亮
     // 显示文字
-    u8g2.setCursor(0, 15);
+    u8g2.setCursor(0, 11);
     u8g2.print("已开机！");
     u8g2.sendBuffer();
 
@@ -397,7 +397,7 @@ void displayWrappedText(const string &text1, int x, int y, int maxWidth)
 
             int charBytes = subWord.size(); // 获取字符的字节长度
 
-            int charWidth = charBytes == 3 ? 16 : 8; // unifont 中文字符16像素宽度，英文字符8像素宽度
+            int charWidth = charBytes == 3 ? 12 : 6; // 中文字符12像素宽度，英文字符6像素宽度
             if (wid + charWidth > maxWidth - cursorX)
             {
                 break;
