@@ -106,6 +106,11 @@ ESP32连接网络后，进行语音唤醒或者按下板载的boot键即可开�
 - 将项目克隆到本地，在vscode中打开整个文件夹，然后等待依赖库下载完毕（右下角的状态栏显示下载进度）
 - 找到.pio\libdeps\esp32-s3-devkitc-1\TFT_eSPI路径下的User_Setup.h文件，删除它，然后将根目录下的User_Setup.h文件剪切粘贴过去
 - 填写main.cpp中要求填写的讯飞账号参数（可选：填写豆包大模型的参数）
+- 申请百度语音合成access_token（TTS发声必需）：
+  1. 注册百度智能云（https://console.bce.baidu.com/），开通"短语音识别-在线合成"服务（个人实名后有免费额度）
+  2. 创建应用，获得API Key和Secret Key
+  3. 浏览器访问 `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=你的APIKey&client_secret=你的SecretKey`，返回的JSON中access_token字段即为所需token
+  4. 替换src/main/Audio2.cpp中 `&tok=` 后面的值（约30天过期，失效后需重新获取替换）
 - 安装esp32的驱动
 - 编译、烧录
 ## 项目成品图参考

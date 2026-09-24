@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pwd; ls *)",
+      "Read(//home/airobot/pio_project/**)",
+      "Read(//home/airobot/pio_project/aiRobot/**)",
+      "Read(//home/airobot/pio_project/aiRobot/ESP32_AI_LLM/**)",
+      "Read(//home/airobot/pio_project/ESP32_AI_LLM_bak/**)",
+      "Read(//home/airobot/pio_project/ESP32_AI_LLM_bak/.git/**)",
+      "Bash(cat /home/airobot/pio_project/ESP32_AI_LLM/.claude/settings.json; echo; echo '=== 剩余差异确认（源码级）==='; diff -rq --exclude=.pio --exclude=.vscode --exclude=.git --exclude=.claude --exclude='*Zone.Identifier' /home/airobot/pio_project/ESP32_AI_LLM /home/airobot/pio_project/aiRobot/ESP32_AI_LLM)",
+      "Bash(set -e)",
+      "Bash(cp ESP32_AI_LLM/README.md aiRobot/ESP32_AI_LLM/README.md)",
+      "Bash(mkdir -p aiRobot/ESP32_AI_LLM/.claude)",
+      "Bash(mv ESP32_AI_LLM/.claude/settings.json aiRobot/ESP32_AI_LLM/.claude/settings.json)",
+      "Bash(ls -lt ~/.claude/projects/-home-airobot-pio-project-aiRobot/*.jsonl 2>/dev/null | head -20)",
+      "Read(//home/airobot/.claude/projects/-home-airobot-pio-project-aiRobot/**)",
+      "Read(//home/airobot/.claude/projects/**)"
+    ]
+  }
+}
