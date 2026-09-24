@@ -86,10 +86,14 @@ void Audio1::Record()
   i2s->Read(i2sBuffer, i2sBufferSize);
   for (int i = 0; i < i2sBufferSize / 8; ++i)
   {
-    // 实测: 音频数据在每帧第二个 32 位字的高 16 位（字节 6-7）
-    wavData[0][2 * i] = i2sBuffer[8 * i + 6];
-    wavData[0][2 * i + 1] = i2sBuffer[8 * i + 7];
+    // 麦克风信号偏弱（实测大声说话峰值仅500左右），做8倍数字增益
+    int32_t s = (int32_t)(int16_t)((i2sBuffer[8 * i + 3] << 8) | i2sBuffer[8 * i + 2]) * 8;
+    if (s > 32767) s = 32767;
+    if (s < -32768) s = -32768;
+    wavData[0][2 * i] = s & 0xFF;
+    wavData[0][2 * i + 1] = (s >> 8) & 0xFF;
   }
+
 
   // client.print("\r\n");
 

@@ -5,7 +5,7 @@
 #define led 48      //板载led引脚（GPIO8 已被 OLED SCL 占用）
 #define light 38    // 灯光引脚
 // 定义音频放大模块的I2S引脚定义
-#define I2S_DOUT 17 // DIN引脚
+#define I2S_DOUT 7  // DIN引脚
 #define I2S_BCLK 15 // BCLK引脚
 #define I2S_LRC 16  // LRC引脚
 
@@ -244,15 +244,31 @@ void setup()
     digitalWrite(light, LOW);
 
     // 初始化屏幕
-    Wire.begin(8, 9);                    // OLED I2C: SCL=GPIO8, SDA=GPIO9
-    u8g2.begin();                        // SSD1306 0.96寸 OLED，默认地址 0x3C
+    Wire.begin(41, 42);                  // OLED I2C: SDA=GPIO41, SCL=GPIO42（实际接线）
+    // 扫描 I2C 总线，自动适配 OLED 地址（0x3C 或 0x3D）
+    {
+      bool addr3D = false;
+      Serial.println("I2C scan:");
+      for (uint8_t addr = 1; addr < 127; addr++)
+      {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0)
+        {
+          Serial.printf("  found 0x%02X\n", addr);
+          if (addr == 0x3D) addr3D = true;
+        }
+      }
+      if (addr3D) u8g2.setI2CAddress(0x3D << 1);
+    }
+    u8g2.begin();                        // SSD1306 0.96寸 OLED
 
     // 初始化U8g2
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312); // 设置中文字体库
+    u8g2.setFont(u8g2_font_unifont_t_chinese3); // UTF-8 中文字体
+    u8g2.enableUTF8Print();                     // 启用 UTF-8 打印
     u8g2.setFontMode(1);                    // 设置字体模式为透明模式，不设置的话中文字符会变成一个黑色方块
     u8g2.setDrawColor(1);                   // 单色屏: 1=点亮
     // 显示文字
-    u8g2.setCursor(0, 11);
+    u8g2.setCursor(0, 15);
     u8g2.print("已开机！");
     u8g2.sendBuffer();
 
@@ -308,6 +324,8 @@ void loop()
 
     // 音频处理循环
     audio2.loop();
+
+
 
     // 如果音频正在播放
     if (audio2.isplaying == 1)  digitalWrite(led, HIGH);    // 点亮板载LED指示灯
@@ -379,7 +397,7 @@ void displayWrappedText(const string &text1, int x, int y, int maxWidth)
 
             int charBytes = subWord.size(); // 获取字符的字节长度
 
-            int charWidth = charBytes == 3 ? 12 : 6; // 中文字符12像素宽度，英文字符6像素宽度
+            int charWidth = charBytes == 3 ? 16 : 8; // unifont 中文字符16像素宽度，英文字符8像素宽度
             if (wid + charWidth > maxWidth - cursorX)
             {
                 break;

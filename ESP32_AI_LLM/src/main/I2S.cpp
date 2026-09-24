@@ -2,8 +2,8 @@
 #define SAMPLE_RATE (8000)
 // 定义麦克风引脚
 #define PIN_I2S_BCLK 5
-#define PIN_I2S_LRC 6
-#define PIN_I2S_DIN 7
+#define PIN_I2S_LRC 4
+#define PIN_I2S_DIN 6
 // #define PIN_I2S_DOUT 25
 
 const i2s_port_t I2S_PORT = I2S_NUM_0;
