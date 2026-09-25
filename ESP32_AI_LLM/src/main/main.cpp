@@ -74,6 +74,13 @@ String Answer = "";             //存储llm回答，用于语音合成（较短�
 std::vector<String> subAnswers; //存储llm回答，用于语音合成（较长的回答，分段存储）
 int subindex = 0;               //subAnswers的下标，用于voicePlay()
 String text_temp = "";          //存储超出当前屏幕的文字，在下一屏幕显示
+// —— 屏幕文字与语音同步（打字机式逐字显示）——
+String syncText = "";           // 当前播报中、需同步显示的文字段
+int syncTotalMs = 0;            // 该段预估播报总时长（毫秒）
+int syncShownBytes = 0;         // 已显示的字节数（整字符边界，只在出现新字符时重绘）
+bool syncStarted = false;       // 音频是否已真正开始解码播放
+unsigned long syncStartMs = 0;  // 音频真正开始的时刻
+unsigned long syncReqMs = 0;    // 发起TTS请求的时刻（请求失败兜底用）
 int loopcount = 0;      //对话次数计数器
 int flag = 0;           //用来确保subAnswer1一定是大模型回答最开始的内容
 int conflag = 0;        //用于连续对话
@@ -98,7 +105,11 @@ DynamicJsonDocument gen_params(const char *appid, const char *domain);
 DynamicJsonDocument gen_params_http(const char *model, const char *role_set);
 void processResponse(int status);
 void displayWrappedText(const string &text1, int x, int y, int maxWidth);
-void getText(String role, String content);
+void speakAndDisplay(String text);
+void displayProgress(String text, int showBytes);
+int speechMs(String text);
+int bytesForMs(String text, int ms);
+void getText(String role, String content, bool show = true);
 void checkLen();
 void removeChars(const char *input, char *output, const char *removeSet);
 float calculateRMS(uint8_t *buffer, int bufferSize);
@@ -119,48 +130,12 @@ void voicePlay()
     {
         if (subindex < subAnswers.size())
         {
-            audio2.connecttospeech(subAnswers[subindex].c_str(), "zh");
-            // 在屏幕上显示文字
-            if (text_temp != "" && flag == 1)
-            {
-                // 清空屏幕
-                u8g2.clearBuffer();
-                u8g2.sendBuffer();
-                // 显示剩余的文字
-                displayWrappedText(text_temp.c_str(), 0, 11, width);
-                text_temp = "";
-                displayWrappedText(subAnswers[subindex].c_str(), u8g2.getCursorX(), u8g2.getCursorY(), width);
-            }
-            else if (flag == 1)
-            {
-                // 清空屏幕
-                u8g2.clearBuffer();
-                u8g2.sendBuffer();
-                displayWrappedText(subAnswers[subindex].c_str(), 0, 11, width);
-            }
+            speakAndDisplay(subAnswers[subindex]);   // 发起TTS，文字随语音同步显示
             subindex++;
         }
         else
         {
-            audio2.connecttospeech(Answer.c_str(), "zh");
-            // 在屏幕上显示文字
-            if (text_temp != "" && flag == 1)
-            {
-                // 清空屏幕
-                u8g2.clearBuffer();
-                u8g2.sendBuffer();
-                // 显示剩余的文字
-                displayWrappedText(text_temp.c_str(), 0, 11, width);
-                text_temp = "";
-                displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY(), width);
-            }
-            else if (flag == 1)
-            {
-                // 清空屏幕
-                u8g2.clearBuffer();
-                u8g2.sendBuffer();
-                displayWrappedText(Answer.c_str(), 0, 11, width);
-            }
+            speakAndDisplay(Answer);
             Answer = "";
             conflag = 1;
         }
@@ -264,7 +239,7 @@ void setup()
     u8g2.begin();                        // SSD1306 0.96寸 OLED
 
     // 初始化U8g2
-    u8g2.setFont(u8g2_font_wqy12_t_chinese3); // 12px UTF-8 中文字体
+    u8g2.setFont(u8g2_font_wqy12_t_gb2312); // 12px UTF-8 中文字体（GB2312全集7533字，chinese3子集缺常用字如"待"）
     u8g2.enableUTF8Print();                     // 启用 UTF-8 打印
     u8g2.setFontMode(1);                    // 设置字体模式为透明模式，不设置的话中文字符会变成一个黑色方块
     u8g2.setDrawColor(1);                   // 单色屏: 1=点亮
@@ -344,6 +319,37 @@ void loop()
     // 如果音频正在播放
     if (audio2.isplaying == 1)  digitalWrite(led, HIGH);    // 点亮板载LED指示灯
     else    digitalWrite(led, LOW);     // 熄灭板载LED指示灯
+
+    // 屏幕文字与语音同步显示：检测音频真正开始后，按播报进度逐字显示
+    if (syncText != "")
+    {
+        if (!syncStarted && audio2.isplaying && audio2.getBitRate() > 0)
+        {
+            // 首帧MP3解码成功（码率已知），声音即将开始
+            syncStarted = true;
+            syncStartMs = millis();
+        }
+        if (syncStarted && audio2.isplaying)
+        {
+            unsigned long elapsed = millis() - syncStartMs;
+            int targetMs = (elapsed > (unsigned long)syncTotalMs) ? syncTotalMs : (int)elapsed;
+            if (targetMs < 1)
+                targetMs = 1;
+            int showBytes = bytesForMs(syncText, targetMs);   // 换算成整字符边界的字节数
+            if (showBytes != syncShownBytes)                  // 仅出现新字符时才重绘，避免每帧刷屏占用音频处理时间
+            {
+                syncShownBytes = showBytes;
+                displayProgress(syncText, syncShownBytes);
+            }
+        }
+        else if (audio2.isplaying == 0 && (syncStarted || millis() - syncReqMs > 3000))
+        {
+            // 播报结束（或TTS请求失败兜底）：补全显示整段文字
+            displayProgress(syncText, syncText.length());
+            syncText = "";
+            syncStarted = false;
+        }
+    }
     
     // 唤醒词识别
     if (audio2.isplaying == 0 && awake_flag == 0 && await_flag == 1)
@@ -438,8 +444,149 @@ void displayWrappedText(const string &text1, int x, int y, int maxWidth)
     u8g2.sendBuffer();
 }
 
+// 返回位置 i 处 UTF-8 字符占用的字节数（1~4）
+int utf8CharSize(const char *s, int i)
+{
+    int size = 1;
+    if (s[i] & 0x80)
+    {
+        char temp = s[i];
+        temp <<= 1;
+        do
+        {
+            temp <<= 1;
+            ++size;
+        } while (temp & 0x80);
+    }
+    return size;
+}
+
+// 单个 UTF-8 字符的预估播报时长（毫秒），按百度TTS spd=6 语速估算，可按实测微调
+int charMs(String text, int i)
+{
+    int size = utf8CharSize(text.c_str(), i);
+    int ms = size == 3 ? 190 : 90;   // 中文每字约190ms，ASCII约90ms
+    if (size == 3)
+    {
+        const char *p = text.c_str() + i;
+        if (!strncmp(p, "。", 3) || !strncmp(p, "！", 3) || !strncmp(p, "？", 3) ||
+            !strncmp(p, "；", 3) || !strncmp(p, "，", 3) || !strncmp(p, "、", 3) ||
+            !strncmp(p, "：", 3) || !strncmp(p, "…", 3))
+            ms += 250;   // 标点附加停顿
+    }
+    return ms;
+}
+
+// 估算一段文字用百度TTS播报的总时长（毫秒）
+int speechMs(String text)
+{
+    int ms = 0;
+    for (int i = 0; i < text.length(); i += utf8CharSize(text.c_str(), i))
+        ms += charMs(text, i);
+    return ms;
+}
+
+// 按语音进度换算应显示的字节数（截断到 UTF-8 整字符边界）
+int bytesForMs(String text, int ms)
+{
+    int acc = 0;
+    int i = 0;
+    while (i < text.length())
+    {
+        acc += charMs(text, i);
+        i += utf8CharSize(text.c_str(), i);
+        if (acc >= ms)
+            return i;
+    }
+    return text.length();
+}
+
+// 打字机式显示：只显示文字前 showBytes 字节，超出屏幕时滚动显示末尾几行
+void displayProgress(String text, int showBytes)
+{
+    u8g2.clearBuffer();
+    if (showBytes <= 0)
+    {
+        u8g2.sendBuffer();
+        return;
+    }
+    if (showBytes > text.length())
+        showBytes = text.length();
+
+    int lineHeight = u8g2.getFontAscent() - u8g2.getFontDescent() + 2;
+    int startY = 11;   // 与 displayWrappedText 保持一致
+    int maxLines = 0;
+    for (int y = startY; y <= height - 10; y += lineHeight)
+        maxLines++;
+
+    // 第一遍：按屏宽换行，记录每行起点（字节偏移）
+    int lineStarts[80];
+    int lineCount = 0;
+    int i = 0;
+    int wid = 0;
+    lineStarts[lineCount++] = 0;
+    while (i < showBytes)
+    {
+        int size = utf8CharSize(text.c_str(), i);
+        int charWidth = size == 3 ? 12 : 6;
+        if (wid + charWidth > width)
+        {
+            lineStarts[lineCount++] = i;
+            wid = 0;
+        }
+        wid += charWidth;
+        i += size;
+    }
+
+    // 若超过一屏，只显示最后 maxLines 行（跟随语音的滚动窗口）
+    int pos = (lineCount > maxLines) ? lineStarts[lineCount - maxLines] : 0;
+
+    // 第二遍：从窗口起点按行打印
+    int y = startY;
+    while (pos < showBytes && y <= height - 10)
+    {
+        int lineBytes = 0;
+        int w = 0;
+        int j = pos;
+        while (j < showBytes)
+        {
+            int size = utf8CharSize(text.c_str(), j);
+            int charWidth = size == 3 ? 12 : 6;
+            if (w + charWidth > width)
+                break;
+            w += charWidth;
+            lineBytes += size;
+            j += size;
+        }
+        if (lineBytes == 0)
+            break;
+        u8g2.setCursor(0, y);
+        u8g2.print(text.substring(pos, pos + lineBytes).c_str());   // substring(起, 止) 第二参数是结束位置
+        y += lineHeight;
+        pos += lineBytes;
+    }
+    u8g2.sendBuffer();
+}
+
+// 发起TTS播报，文字交给同步显示（随语音逐字出现）
+void speakAndDisplay(String text)
+{
+    // 上一段如有未显示完的内容，先补全显示，避免残留
+    if (syncText != "" && syncShownBytes < syncText.length())
+    {
+        syncShownBytes = syncText.length();
+        displayProgress(syncText, syncShownBytes);
+    }
+    syncText = text;
+    syncTotalMs = max(1, speechMs(text));
+    syncShownBytes = 0;
+    syncStarted = false;
+    syncReqMs = millis();
+    audio2.connecttospeech(text.c_str(), "zh");
+}
+
 // 显示文本
-void getText(String role, String content)
+void getText(String role, String content, bool show)
 {
     // 检查并调整文本长度
     checkLen();
@@ -479,13 +626,13 @@ void getText(String role, String content)
     // 清空临时JSON文档
     jsoncon.clear();
 
-    // 打印角色
-    u8g2.setCursor(0, u8g2.getCursorY() + 2);
-    u8g2.print(role);
-    u8g2.print(": ");
-
-    // 打印内容
-    displayWrappedText(content.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+    // 打印角色和内容（assistant 的文字改由 speakAndDisplay 随语音同步显示）
+    if (show)
+    {
+        // 整段显示提问，超过一屏时滚动显示末尾（与回答一致，不再截断丢字）
+        String line = role + ": " + content;
+        displayProgress(line, line.length());
+    }
 
     // 也可以使用格式化的方式输出JSON，以下代码被注释掉了
     // serializeJsonPretty(text, Serial);
@@ -644,11 +791,11 @@ void processResponse(int status)
                 Serial.print("subAnswer1:");
                 Serial.println(subAnswer1);
 
-                // 将提取的句子转换为语音
-                audio2.connecttospeech(subAnswer1.c_str(), "zh");
+                // 将提取的句子转换为语音，文字随语音同步显示
+                speakAndDisplay(subAnswer1);
 
-                // 获取最终转换的文本
-                getText("assistant", subAnswer1);
+                // 记录到对话历史（不再重复显示）
+                getText("assistant", subAnswer1, false);
                 flag = 1;
 
                 // 更新Answer，去掉已处理的部分
@@ -671,8 +818,8 @@ void processResponse(int status)
                 String subAnswer1 = Answer.substring(0, lastCommaIndex + 3);
                 Serial.print("subAnswer1:");
                 Serial.println(subAnswer1);
-                audio2.connecttospeech(subAnswer1.c_str(), "zh");
-                getText("assistant", subAnswer1);
+                speakAndDisplay(subAnswer1);
+                getText("assistant", subAnswer1, false);
                 flag = 1;
                 Answer = Answer.substring(lastCommaIndex + 3);
                 subAnswer1.clear();
@@ -683,8 +830,8 @@ void processResponse(int status)
                 String subAnswer1 = Answer.substring(0, Answer.length());
                 Serial.print("subAnswer1:");
                 Serial.println(subAnswer1);
-                audio2.connecttospeech(subAnswer1.c_str(), "zh");
-                getText("assistant", subAnswer1);
+                speakAndDisplay(subAnswer1);
+                getText("assistant", subAnswer1, false);
                 flag = 1;
                 Answer = Answer.substring(Answer.length());
                 subAnswer1.clear();
@@ -760,10 +907,10 @@ void processResponse(int status)
     // 如果status为2（回复的内容接收完成），且回复的内容小于180字节
     if (status == 2 && flag == 0)
     {
-        // 播放最终转换的文本
-        audio2.connecttospeech(Answer.c_str(), "zh");
-        // 显示最终转换的文本
-        getText("assistant", Answer);
+        // 播放最终转换的文本，文字随语音同步显示
+        speakAndDisplay(Answer);
+        // 记录最终转换的文本到历史
+        getText("assistant", Answer, false);
         Answer = "";
         conflag = 1;
         startPlay = true;
@@ -966,12 +1113,7 @@ void VolumeSet()
 
 void response()
 {
-    u8g2.clearBuffer();
-    u8g2.sendBuffer();
-    u8g2.setCursor(0, 0);
-    u8g2.print("assistant: ");
-    audio2.connecttospeech(Answer.c_str(), "zh");
-    displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+    speakAndDisplay(Answer);   // 文字随语音同步显示
     Answer = "";
 }
 
@@ -1187,10 +1329,8 @@ void onMessageCallback1(WebsocketsMessage message)
                 if (askquestion.indexOf("不想") > -1 || askquestion.indexOf("暂停") > -1)
                 {
                     musicplay = 0;
-                    u8g2.print("assistant: ");
                     Answer = "好的，那主人还有其它吩咐吗？喵~";
-                    audio2.connecttospeech(Answer.c_str(), "zh");
-                    displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                    speakAndDisplay(Answer);
                     Answer = "";
                     conStatus = 0;
                     conflag = 1;
@@ -1327,10 +1467,8 @@ void onMessageCallback1(WebsocketsMessage message)
                     if (musicID == "") 
                     {
                         Serial.println("未找到对应的音乐！");
-                        u8g2.print("assistant: ");
                         Answer = "主人，曲库里还没有这首歌哦，换一首吧，喵~";
-                        audio2.connecttospeech(Answer.c_str(), "zh");
-                        displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                        speakAndDisplay(Answer);
                         Answer = "";
                         conflag = 1;
                     } 
@@ -1407,10 +1545,8 @@ void onMessageCallback1(WebsocketsMessage message)
                 if (askquestion.indexOf("不想") > -1)
                 {
                     mainStatus = 0;
-                    u8g2.print("assistant: ");
                     Answer = "好的，那主人还有其它吩咐吗？喵~";
-                    audio2.connecttospeech(Answer.c_str(), "zh");
-                    displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                    speakAndDisplay(Answer);
                     Answer = "";
                     conflag = 1;
                     return;
@@ -1470,10 +1606,8 @@ void onMessageCallback1(WebsocketsMessage message)
                 {
                     mainStatus = 1;
                     Serial.println("未找到对应的音乐！");
-                    u8g2.print("assistant: ");
                     Answer = "好的喵，主人，你想听哪首歌呢，喵~";
-                    audio2.connecttospeech(Answer.c_str(), "zh");
-                    displayWrappedText(Answer.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                    speakAndDisplay(Answer);
                     Answer = "";
                     conflag = 1;
                 } 
@@ -1509,8 +1643,8 @@ void onMessageCallback1(WebsocketsMessage message)
                 u8g2.setCursor(0, 0);
                 getText("user", askquestion);
                 Answer = "这就开始放映主人喜欢的图片，喵~";
-                audio2.connecttospeech(Answer.c_str(), "zh");
-                getText("assistant", Answer);
+                speakAndDisplay(Answer);
+                getText("assistant", Answer, false);
                 Answer = "";
                 image_show = 1;
                 conflag = 1;
