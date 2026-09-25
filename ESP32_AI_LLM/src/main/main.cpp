@@ -32,8 +32,8 @@ String APPID = "57c3792c";                             // App ID,必填
 String APISecret = "YmZlOTk1NDhjYmFjYzk1N2I0MjRlYWUy"; // API Secret，必填
 String APIKey = "65a56f0fb36ded9cdb86817db855fbe0";    // API Key，必填
 String appId1 = APPID;
-String domain1 = "4.0Ultra";    // 根据需要更改
-String websockets_server = "ws://spark-api.xf-yun.com/v4.0/chat";   // 根据需要更改
+String domain1 = "generalv3.5";    // 根据需要更改（3.5 响应更快；追求质量可换回 4.0Ultra）
+String websockets_server = "ws://spark-api.xf-yun.com/v3.5/chat";   // 根据需要更改
 String websockets_server1 = "ws://iat-api.xfyun.cn/v2/iat";
 // 讯飞stt语种设置
 String language = "zh_cn";     //zh_cn：中文（支持简单的英文识别）en_us：English
@@ -47,6 +47,7 @@ bool ledstatus = true;          // 控制led闪烁
 bool startPlay = false;
 unsigned long urlTime = 0;
 int noise = 50;                 // 噪声门限值
+float lastAmbient = 0;          // 最近一次测得的环境底噪（会话间慢自适应）
 int volume = 80;               // 初始音量大小（最小0，最大100）
 //音乐播放
 int mainStatus = 0;
@@ -277,6 +278,19 @@ void setup()
     // 设置音频输出引脚和音量
     audio2.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     audio2.setVolume(volume);
+
+    // 开机测量一次环境底噪，作为会话噪声门限的初值
+    {
+        float acc = 0;
+        for (int i = 0; i < 20; i++)
+        {
+            audio1.Record();
+            acc += calculateRMS((uint8_t *)audio1.wavData[0], 1280);
+        }
+        lastAmbient = acc / 20;
+        noise = (int)max(lastAmbient * 2.0f, 400.0f);
+        Serial.printf("NOISE init ambient=%.1f noise=%d\n", lastAmbient, noise);
+    }
 
     // 初始化Preferences
     preferences.begin("wifi_store");
@@ -1550,6 +1564,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
         int voicebegin = 0;
         int voice = 0;
         int null_voice = 0;
+        int frames = 0;
 
         // 创建一个静态JSON文档对象，2000一般够了，不够可以再加（最多不能超过4096），但是可能会发生内存溢出
         StaticJsonDocument<2000> doc;
@@ -1579,27 +1594,10 @@ void onEventsCallback1(WebsocketsEvent event, String data)
         conflag = 0;
 
         Serial.println("开始录音");
-        // 自适应噪音门限：采样约1.5秒，取最小8帧均值作为环境底噪
-        {
-            float vals[20];
-            for (int i = 0; i < 20; i++)
-            {
-                audio1.Record();
-                vals[i] = calculateRMS((uint8_t *)audio1.wavData[0], 1280);
-            }
-            float sumLow = 0;
-            for (int i = 0; i < 8; i++)
-            {
-                float mn = vals[0]; int mi = 0;
-                for (int j = 1; j < 20; j++)
-                    if (vals[j] < mn) { mn = vals[j]; mi = j; }
-                sumLow += mn;
-                vals[mi] = 1e9f;
-            }
-            float ambient = sumLow / 8;
-            noise = (int)max(ambient * 2.0f, 400.0f);
-            Serial.printf("NOISE ambient=%.1f noise=%d\n", ambient, noise);
-        }
+        // 使用最近一次测得的环境底噪更新门限（录音立即开始，无测量空窗）
+        if (lastAmbient > 0)
+            noise = (int)max(lastAmbient * 2.0f, 400.0f);
+        Serial.printf("NOISE noise=%d\n", noise);
         // 无限循环，用于录制和发送音频数据
         while (1)
         {
@@ -1628,6 +1626,14 @@ void onEventsCallback1(WebsocketsEvent event, String data)
             }
             printf("%d %f\n", 0, rms);
 
+            // 跟踪环境底噪（仅取低于门限的帧，会话间慢自适应）
+            frames++;
+            if (frames > 10 && rms < noise && (rms < lastAmbient || lastAmbient == 0))
+                lastAmbient = rms;
+
+            // 保持音频播放状态机运行（若录音期间有语音播放不卡顿）
+            audio2.loop();
+
             // stt连接断开时结束本次录音，避免系统卡死在录音循环
             if (!webSocketClient1.available())
             {
@@ -1638,7 +1644,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
                 return;
             }
 
-            if(null_voice >= 80)    // 如果从录音开始过了8秒才说话，讯飞stt识别会超时，所以直接结束本次录音，重新开始录音
+            if(null_voice >= 100)   // 10秒静音超时，给用户更多开口时间（讯飞stt会话超时）
             {
                 if (start_con == 1)     // 表示正处于对话中，才回复退下，没有进入对话则继续待机
                 {
