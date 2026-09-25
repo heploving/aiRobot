@@ -39,8 +39,8 @@ String websockets_server1 = "ws://iat-api.xfyun.cn/v2/iat";
 String language = "zh_cn";     //zh_cn：中文（支持简单的英文识别）en_us：English
 
 // 角色设定
-String roleSet = "你是一个二次元魔法猫娘，你的名字叫小灵，你的性格可爱活泼，说话简短，同时带有攻击嘲讽意味，你喜欢在回答的末尾加一个“喵”字。";
-String roleSet1 = "你是一个二次元魔法猫娘，你的名字叫小灵，你的性格可爱活泼，说话简短，同时带有攻击嘲讽意味，你喜欢在回答的末尾加一个“喵”字。";
+String roleSet = "你是一个温柔的小女生，你的名字叫小白，你的性格可爱活泼，说话简短，同时温柔可爱有礼貌。";
+String roleSet1 = "你是一个温柔的小女生，你的名字叫小白，你的性格可爱活泼，说话简短，同时温柔可爱有礼貌。";
 
 // 定义一些全局变量
 bool ledstatus = true;          // 控制led闪烁
@@ -288,7 +288,7 @@ void setup()
             acc += calculateRMS((uint8_t *)audio1.wavData[0], 1280);
         }
         lastAmbient = acc / 20;
-        noise = (int)max(lastAmbient * 2.0f, 400.0f);
+        noise = (int)max(lastAmbient * 1.8f, 300.0f);
         Serial.printf("NOISE init ambient=%.1f noise=%d\n", lastAmbient, noise);
     }
 
@@ -1058,7 +1058,7 @@ void onMessageCallback1(WebsocketsMessage message)
                 {
                     await_flag = 0;     //退出待机状态
                     start_con = 1;      //对话开始标识
-                    Answer = "喵~我在的，主人。";
+                    Answer = "我来了，主人。";
                     response();     //屏幕显示Answer以及语音播放
                     conflag = 1;
                     return;
@@ -1074,7 +1074,7 @@ void onMessageCallback1(WebsocketsMessage message)
             // 如果问句为空，播放错误提示语音
             if (askquestion == "")
             {
-                Answer = "喵~主人，我没有听清，请再说一遍吧";
+                Answer = "主人，我没有听清，请再说一遍吧";
                 response();     //屏幕显示Answer以及语音播放
                 conflag = 1;
             }
@@ -1082,7 +1082,7 @@ void onMessageCallback1(WebsocketsMessage message)
             {
                 start_con = 0;      // 标识一轮对话结束
                 musicplay = 0;
-                Answer = "喵~主人，我先退下了，有事再叫我。";
+                Answer = "主人，我先退下了，有事再叫我。";
                 response();     //屏幕显示Answer以及语音播放
                 await_flag = 1;     // 进入待机状态
                 awake_flag = 0;     // 继续进行唤醒词识别
@@ -1142,27 +1142,27 @@ void onMessageCallback1(WebsocketsMessage message)
                 if (numberStr.length() > 0)
                 {
                     llm = numberStr.toInt() - 1;
-                    Answer = "喵~已为你切换为第"+ numberStr + "个模型";
+                    Answer = "已为你切换为第"+ numberStr + "个模型";
                 }
                 if (askquestion.indexOf("字节") > -1 || askquestion.indexOf("豆包") > -1)
                 {
                     llm = 0;
-                    Answer = "喵~已为你切换为豆包大模型";
+                    Answer = "已为你切换为豆包大模型";
                 }
                 if (askquestion.indexOf("讯飞") > -1 || askquestion.indexOf("星火") > -1)
                 {
                     llm = 1;
-                    Answer = "喵~已为你切换为星火大模型";
+                    Answer = "已为你切换为星火大模型";
                 }
                 if (askquestion.indexOf("阿里") > -1 || askquestion.indexOf("通义") > -1 || askquestion.indexOf("千问") > -1)
                 {
                     llm = 2;
-                    Answer = "喵~已为你切换为通义千问大模型";
+                    Answer = "已为你切换为通义千问大模型";
                 } 
                 if (askquestion.indexOf("Chat") > -1 || askquestion.indexOf("Gpt") > -1 || askquestion.indexOf("chat") > -1 || askquestion.indexOf("gpt") > -1)
                 {
                     llm = 3;
-                    Answer = "喵~已为你切换为Chatgpt大模型";
+                    Answer = "已为你切换为Chatgpt大模型";
                 }         
                 response();     //屏幕显示Answer以及语音播放
                 conflag = 1;
@@ -1596,7 +1596,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
         Serial.println("开始录音");
         // 使用最近一次测得的环境底噪更新门限（录音立即开始，无测量空窗）
         if (lastAmbient > 0)
-            noise = (int)max(lastAmbient * 2.0f, 400.0f);
+            noise = (int)max(lastAmbient * 1.8f, 300.0f);
         Serial.printf("NOISE noise=%d\n", noise);
         // 无限循环，用于录制和发送音频数据
         while (1)
@@ -1620,7 +1620,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
 
             // 计算音频数据的RMS值
             float rms = calculateRMS((uint8_t *)audio1.wavData[0], 1280);
-            if (null_voice < 10 && rms > 1000) // 抑制录音初期奇奇怪怪的噪声
+            if (null_voice < 20 && rms > 1000) // 抑制录音初期奇奇怪怪的噪声
             {
                 rms = 8.6;
             }
@@ -1628,7 +1628,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
 
             // 跟踪环境底噪（仅取低于门限的帧，会话间慢自适应）
             frames++;
-            if (frames > 10 && rms < noise && (rms < lastAmbient || lastAmbient == 0))
+            if (frames > 20 && rms < noise && (rms < lastAmbient || lastAmbient == 0))
                 lastAmbient = rms;
 
             // 保持音频播放状态机运行（若录音期间有语音播放不卡顿）
@@ -1644,7 +1644,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
                 return;
             }
 
-            if(null_voice >= 100)   // 10秒静音超时，给用户更多开口时间（讯飞stt会话超时）
+            if(null_voice >= 250)   // 10秒静音超时（16kHz下每帧40ms），给用户更多开口时间
             {
                 if (start_con == 1)     // 表示正处于对话中，才回复退下，没有进入对话则继续待机
                 {
@@ -1676,7 +1676,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
                 if (null_voice > 0)
                     null_voice--;
                 voice++;
-                if (voice >= 5)
+                if (voice >= 8)
                 {
                     voicebegin = 1;
                 }
@@ -1688,10 +1688,10 @@ void onEventsCallback1(WebsocketsEvent event, String data)
             }
 
             // 如果静音达到8个周期，发送结束标志的音频数据
-            if (silence == 8)
+            if (silence == 16)
             {
                 data["status"] = 2;
-                data["format"] = "audio/L16;rate=8000";
+                data["format"] = "audio/L16;rate=16000";
                 data["audio"] = base64::encode((byte *)audio1.wavData[0], 1280);
                 data["encoding"] = "raw";
 
@@ -1708,7 +1708,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
             if (firstframe == 1)
             {
                 data["status"] = 0;
-                data["format"] = "audio/L16;rate=8000";
+                data["format"] = "audio/L16;rate=16000";
                 data["audio"] = base64::encode((byte *)audio1.wavData[0], 1280);
                 data["encoding"] = "raw";
 
@@ -1736,7 +1736,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
             {
                 // 处理后续帧音频数据
                 data["status"] = 1;
-                data["format"] = "audio/L16;rate=8000";
+                data["format"] = "audio/L16;rate=16000";
                 data["audio"] = base64::encode((byte *)audio1.wavData[0], 1280);
                 data["encoding"] = "raw";
 
