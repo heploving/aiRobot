@@ -25,6 +25,11 @@
 #define I2S_BCLK 15  // BCLK 引脚
 #define I2S_LRC 16   // LRC 引脚
 
+// 麦克风（INMP441，I2S_NUM_0）引脚
+#define MIC_I2S_BCLK 5  // SCK 引脚
+#define MIC_I2S_LRC 4   // WS 引脚
+#define MIC_I2S_DIN 6   // SD 引脚
+
 // ==================== 大模型参数（用哪个模型就填哪个） ====================
 // 豆包大模型（火山方舟）
 #define DOUBAO_MODEL ""                                              // 在线推理接入点名称，必填

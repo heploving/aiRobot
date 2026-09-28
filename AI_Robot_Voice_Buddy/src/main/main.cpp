@@ -1,5 +1,6 @@
 #include "config.h"
 #include "Web_Scr_set.h"
+#include "recorder.h"
 
 int llm = 1;    // 大模型选择参数:0:豆包，1：讯飞星火，2：通义千问，3：ChatGPT
 
@@ -50,8 +51,8 @@ WebsocketsClient webSocketClient;   //与llm通信
 WebsocketsClient webSocketClient1;  //与stt通信
 
 // 创建音频对象
-Audio1 audio1;
-Audio2 audio2(false, 3, I2S_NUM_1); 
+Recorder recorder;
+Audio2 audio2(false, 3, I2S_NUM_1);
 // 参数: 是否使用内部DAC（数模转换器）如果设置为true，将使用ESP32的内部DAC进行音频输出。否则，将使用外部I2S设备。
 // 指定启用的音频通道。可以设置为1（只启用左声道）或2（只启用右声道）或3（启用左右声道）
 // 指定使用哪个I2S端口。ESP32有两个I2S端口，I2S_NUM_0和I2S_NUM_1。可以根据需要选择不同的I2S端口。
@@ -68,7 +69,6 @@ int bytesForMs(String text, int ms);
 void getText(String role, String content, bool show = true);
 void checkLen();
 void removeChars(const char *input, char *output, const char *removeSet);
-float calculateRMS(uint8_t *buffer, int bufferSize);
 void ConnServer();
 void ConnServer1();
 void voicePlay();
@@ -193,8 +193,8 @@ void setup()
     u8g2.print("已开机！");
     u8g2.sendBuffer();
 
-    // 初始化音频模块audio1
-    audio1.init();
+    // 初始化录音模块
+    recorder.init();
     // 设置音频输出引脚和音量
     audio2.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     audio2.setVolume(volume);
@@ -204,8 +204,8 @@ void setup()
         float acc = 0;
         for (int i = 0; i < 20; i++)
         {
-            audio1.Record();
-            acc += calculateRMS((uint8_t *)audio1.wavData[0], 1280);
+            recorder.Record();
+            acc += calculateRMS((uint8_t *)recorder.frame(), FRAME_BYTES);
         }
         lastAmbient = acc / 20;
         noise = (int)max(lastAmbient * 1.8f, 300.0f);
@@ -1641,10 +1641,10 @@ void onEventsCallback1(WebsocketsEvent event, String data)
             JsonObject data = doc.createNestedObject("data");
 
             // 录制音频数据
-            audio1.Record();
+            recorder.Record();
 
             // 计算音频数据的RMS值
-            float rms = calculateRMS((uint8_t *)audio1.wavData[0], 1280);
+            float rms = calculateRMS((uint8_t *)recorder.frame(), FRAME_BYTES);
             if (null_voice < 20 && rms > 1000) // 抑制录音初期奇奇怪怪的噪声
             {
                 rms = 8.6;
@@ -1717,7 +1717,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
             {
                 data["status"] = 2;
                 data["format"] = "audio/L16;rate=16000";
-                data["audio"] = base64::encode((byte *)audio1.wavData[0], 1280);
+                data["audio"] = base64::encode((byte *)recorder.frame(), FRAME_BYTES);
                 data["encoding"] = "raw";
 
                 String jsonString;
@@ -1734,7 +1734,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
             {
                 data["status"] = 0;
                 data["format"] = "audio/L16;rate=16000";
-                data["audio"] = base64::encode((byte *)audio1.wavData[0], 1280);
+                data["audio"] = base64::encode((byte *)recorder.frame(), FRAME_BYTES);
                 data["encoding"] = "raw";
 
                 JsonObject common = doc.createNestedObject("common");
@@ -1762,7 +1762,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
                 // 处理后续帧音频数据
                 data["status"] = 1;
                 data["format"] = "audio/L16;rate=16000";
-                data["audio"] = base64::encode((byte *)audio1.wavData[0], 1280);
+                data["audio"] = base64::encode((byte *)recorder.frame(), FRAME_BYTES);
                 data["encoding"] = "raw";
 
                 String jsonString;
@@ -1993,29 +1993,6 @@ String getUrl(String Spark_url, String host, String path, String Date)
 
     // 返回生成的URL
     return url;
-}
-
-// 计算录音数据的均方根值
-float calculateRMS(uint8_t *buffer, int bufferSize)
-{
-    float sum = 0;  // 初始化总和变量
-    int16_t sample; // 定义16位整数类型的样本变量
-
-    // 遍历音频数据缓冲区，每次处理两个字节（16位）
-    for (int i = 0; i < bufferSize; i += 2)
-    {
-        // 将两个字节组合成一个16位的样本值
-        sample = (buffer[i + 1] << 8) | buffer[i];
-
-        // 将样本值平方后累加到总和中
-        sum += sample * sample;
-    }
-
-    // 计算平均值（样本总数为bufferSize / 2）
-    sum /= (bufferSize / 2);
-
-    // 返回总和的平方根，即RMS值
-    return sqrt(sum);
 }
 
 // 移除讯飞星火回复中没用的符号
