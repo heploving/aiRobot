@@ -43,9 +43,18 @@ String getUrl(String sparkUrl, String host, String path, String date);
 // 工具：过滤 LLM 回复中的无用符号
 void removeChars(const char *input, char *output, const char *removeSet);
 
-// 豆包/通义/ChatGPT 阻塞式 SSE 流式请求
-void doubao();
-void tongyi();
-void chatgpt();
+// LLM 服务商配置（HTTP-SSE 流式调用参数，值为 config.h 宏）
+struct LlmProvider {
+    const char *name;         // 服务商名（日志用）
+    const char *url;          // API 地址
+    const char *apiKey;       // API Key
+    const char *model;        // 模型名
+    bool sseExtraHeader;      // 通义需要 X-DashScope-SSE 请求头
+    bool emptyContentIsDone;  // 豆包以空 content 帧表示结束
+};
+// 统一的 HTTP-SSE 流式调用（原 doubao/tongyi/chatgpt 三函数合并）
+void streamChat(const LlmProvider &provider);
+// 按当前 llm 选择分发请求（天气/时间/日期固定走星火）
+void dispatchLlm();
 
 #endif // LLM_H

@@ -205,29 +205,7 @@ void handleMusicCommand()
         u8g2.sendBuffer();
         u8g2.setCursor(0, 0);
         getText("user", askquestion);
-        if (askquestion.indexOf("天气") > -1 || askquestion.indexOf("几点了") > -1 || askquestion.indexOf("日期") > -1)
-            ConnServer();
-        else
-        {
-            switch (llm)
-            {
-            case 0:
-                doubao();       // 豆包
-                break;
-            case 1:
-                ConnServer();   // 讯飞星火
-                break;
-            case 2:
-                tongyi();       // 通义千问
-                break;
-            case 3:
-                chatgpt();       // chatgpt
-                break;
-            default:
-                ConnServer();   // 讯飞星火
-                break;
-            }
-        }
+        dispatchLlm();   // 按所选模型分发（M6c：两处重复 switch 合一）
     }
     else
     {

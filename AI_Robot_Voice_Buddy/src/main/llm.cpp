@@ -591,21 +591,31 @@ void removeChars(const char *input, char *output, const char *removeSet)
     output[j] = '\0'; // 结束符
 }
 
-// 问题发送给豆包大模型并接受回答，然后转成语音
-void doubao()
+namespace {
+// 三个 HTTP-SSE 服务商配置（参数值见 config.h）
+const LlmProvider kDoubao  = {"豆包",   DOUBAO_URL,   DOUBAO_API_KEY,   DOUBAO_MODEL,   false, true };
+const LlmProvider kTongyi  = {"通义",   TONGYI_URL,   TONGYI_API_KEY,   TONGYI_MODEL,   true,  false};
+const LlmProvider kChatgpt = {"ChatGPT", CHATGPT_URL, CHATGPT_API_KEY, CHATGPT_MODEL,  false, false};
+} // namespace
+
+// 统一的 HTTP-SSE 流式调用（原 doubao/tongyi/chatgpt 三函数合并，
+// 三者仅 URL/Key/模型/结束判断方式不同，由 LlmProvider 配置区分）
+void streamChat(const LlmProvider &p)
 {
     HTTPClient http;
-    http.setTimeout(20000);     // 设置请求超时时间
-    http.begin(DOUBAO_URL);
+    http.setTimeout(HTTP_TIMEOUT_MS);     // 设置请求超时时间
+    http.begin(p.url);
     http.addHeader("Content-Type", "application/json");
-    String token_key = String("Bearer ") + DOUBAO_API_KEY;
+    String token_key = String("Bearer ") + p.apiKey;
     http.addHeader("Authorization", token_key);
+    if (p.sseExtraHeader)
+        http.addHeader("X-DashScope-SSE", "enable");
 
     // 向串口输出提示信息
-    Serial.println("Send message to doubao!");
+    Serial.println(String("Send message to ") + p.name + "!");
 
     // 生成连接参数的JSON文档
-    DynamicJsonDocument jsonData = gen_params_http(DOUBAO_MODEL, ROLE_SET);
+    DynamicJsonDocument jsonData = gen_params_http(p.model, ROLE_SET);
 
     // 将JSON文档序列化为字符串
     String jsonString;
@@ -615,256 +625,128 @@ void doubao()
     Serial.println(jsonString);
     int httpResponseCode = http.POST(jsonString);
 
-    if (httpResponseCode == 200) {
-        // 在 stream（流式调用） 模式下，基于 SSE (Server-Sent Events) 协议返回生成内容，每次返回结果为生成的部分内容片段
-        WiFiClient* stream = http.getStreamPtr();   // 返回一个指向HTTP响应流的指针，通过它可以读取服务器返回的数据
-
-        while (stream->connected()) {   // 这个循环会一直运行，直到客户端（即stream）断开连接。
-            String line = stream->readStringUntil('\n');    // 从流中读取一行字符串，直到遇到换行符\n为止
-            // 检查读取的行是否以data:开头。
-            // 在SSE（Server-Sent Events）协议中，服务器发送的数据行通常以data:开头，这样客户端可以识别出这是实际的数据内容。
-            if (line.startsWith("data:")) {
-                // 如果行以data:开头，提取出data:后面的部分，并去掉首尾的空白字符。
-                String data = line.substring(5);
-                data.trim();
-                // 输出读取的数据，不建议，因为太多了，一次才一两个字
-                //Serial.print("data: ");
-                //Serial.println(data);
-
-                int status = 0;
-                StaticJsonDocument<400> jsonResponse;
-                // 解析收到的数据
-                DeserializationError error = deserializeJson(jsonResponse, data);
-
-                // 如果解析没有错误
-                if (!error)
-                {
-                    // B2 修复：delta 无 content 字段时返回 nullptr，判空后再使用，防止 strlen(nullptr) 崩溃
-                    const char *content = jsonResponse["choices"][0]["delta"]["content"] | nullptr;
-                    if (content != nullptr && strlen(content) > 0)
-                    {
-                        const char *removeSet = "\n*$"; // 定义需要移除的符号集
-                        // 计算新字符串的最大长度
-                        int length = strlen(content) + 1;
-                        char *cleanedContent = new char[length];
-                        removeChars(content, cleanedContent, removeSet);
-                        Serial.println(cleanedContent);
-
-                        // 将内容追加到Answer字符串中
-                        Answer += cleanedContent;
-                        // 释放分配的内存
-                        delete[] cleanedContent;
-                    }
-                    else
-                    {
-                        status = 2;
-                        Serial.println("status: 2");
-                    }
-
-                    processResponse(status);
-
-                    if (status == 2)
-                    {
-                        stream->stop();
-                        break;
-                    }
-                }
-            }
-        }
-        return;
-    }
-    else
+    if (httpResponseCode != 200)
     {
         Serial.printf("Error %i \n", httpResponseCode);
         Serial.println(http.getString());
         http.end();
         return;
     }
+
+    // 在 stream（流式调用）模式下，基于 SSE (Server-Sent Events) 协议返回生成内容，
+    // 每次返回结果为生成的部分内容片段
+    WiFiClient *stream = http.getStreamPtr();
+    // B8-1 修复：单行读取超时（SSE_IDLE_TIMEOUT_MS），弱网断流时不再无限阻塞
+    stream->setTimeout(SSE_IDLE_TIMEOUT_MS);
+    unsigned long t0 = millis();
+    int emptyLines = 0;
+
+    while (stream->connected())   // 这个循环会一直运行，直到客户端（即stream）断开连接
+    {
+        // B8-2 修复：推进音频解码，回答首段到达后 TTS 即可出声
+        // （原实现 LLM 请求期间不调 audio2.loop，声音要等整个回答收完才出）
+        audio2.loop();
+
+        String line = stream->readStringUntil('\n');   // 从流中读取一行字符串，直到遇到换行符\n为止
+        if (line.length() == 0)
+        {
+            // B8-3 修复：readStringUntil 超时返回空串，连续 10 次视为断流主动断开
+            if (++emptyLines > 10)
+            {
+                Serial.println("WARN: SSE 长时间无数据，断开");
+                break;
+            }
+            continue;
+        }
+        emptyLines = 0;
+
+        // 检查读取的行是否以data:开头。
+        // 在SSE（Server-Sent Events）协议中，服务器发送的数据行通常以data:开头，
+        // 这样客户端可以识别出这是实际的数据内容。
+        if (!line.startsWith("data:"))
+            continue;
+        // 如果行以data:开头，提取出data:后面的部分，并去掉首尾的空白字符。
+        String data = line.substring(5);
+        data.trim();
+
+        int status = 0;
+        StaticJsonDocument<1024> jsonResponse;   // 统一 1024（原豆包/ChatGPT 用 400）
+        DeserializationError error = deserializeJson(jsonResponse, data);
+        if (error)
+            continue;
+
+        // B2 修复：delta 无 content 字段时返回 nullptr，判空后再使用，防止 strlen(nullptr) 崩溃
+        const char *content = jsonResponse["choices"][0]["delta"]["content"] | nullptr;
+        if (content != nullptr && strlen(content) > 0)
+        {
+            const char *removeSet = "\n*$"; // 定义需要移除的符号集
+            // 计算新字符串的最大长度
+            int length = strlen(content) + 1;
+            char *cleanedContent = new char[length];
+            removeChars(content, cleanedContent, removeSet);
+            Serial.println(cleanedContent);
+
+            // 将内容追加到Answer字符串中
+            Answer += cleanedContent;
+            // 释放分配的内存
+            delete[] cleanedContent;
+        }
+        else if (p.emptyContentIsDone)
+        {
+            // 豆包以空 content 帧表示结束
+            status = 2;
+            Serial.println("status: 2");
+        }
+
+        if (jsonResponse["choices"][0]["finish_reason"] == "stop")
+        {
+            // 通义/ChatGPT 以 finish_reason 表示结束
+            status = 2;
+            Serial.println("status: 2");
+        }
+
+        processResponse(status);
+
+        if (status == 2)
+        {
+            stream->stop();
+            break;
+        }
+
+        // B8-4 修复：总时长硬超时（STREAM_HARD_TIMEOUT_MS），防服务器不关流导致永久阻塞
+        if (millis() - t0 > STREAM_HARD_TIMEOUT_MS)
+        {
+            Serial.println("WARN: SSE 总时长超限，断开");
+            break;
+        }
+    }
 }
 
-// 问题发送给通义千问大模型并接受回答，然后转成语音
-void tongyi()
+// 按当前 llm 选择分发请求（天气/时间/日期固定走星火，其余按所选模型）
+void dispatchLlm()
 {
-    HTTPClient http;
-    http.setTimeout(20000);     // 设置请求超时时间
-    http.begin(TONGYI_URL);
-    String token_key = String("Bearer ") + TONGYI_API_KEY;
-    http.addHeader("Authorization", token_key);
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("X-DashScope-SSE", "enable");
-
-    // 向串口输出提示信息
-    Serial.println("Send message to tongyiqianwen!");
-
-    // 生成连接参数的JSON文档
-    DynamicJsonDocument jsonData = gen_params_http(TONGYI_MODEL, ROLE_SET);
-
-    // 将JSON文档序列化为字符串
-    String jsonString;
-    serializeJson(jsonData, jsonString);
-
-    // 向串口输出生成的JSON字符串
-    Serial.println(jsonString);
-    int httpResponseCode = http.POST(jsonString);
-
-    if (httpResponseCode == 200) {
-        // 在 stream（流式调用） 模式下，基于 SSE (Server-Sent Events) 协议返回生成内容，每次返回结果为生成的部分内容片段
-        WiFiClient* stream = http.getStreamPtr();   // 返回一个指向HTTP响应流的指针，通过它可以读取服务器返回的数据
-
-        while (stream->connected()) {   // 这个循环会一直运行，直到客户端（即stream）断开连接。
-            String line = stream->readStringUntil('\n');    // 从流中读取一行字符串，直到遇到换行符\n为止
-            // 检查读取的行是否以data:开头。
-            // 在SSE（Server-Sent Events）协议中，服务器发送的数据行通常以data:开头，这样客户端可以识别出这是实际的数据内容。
-            if (line.startsWith("data:")) {
-                // 如果行以data:开头，提取出data:后面的部分，并去掉首尾的空白字符。
-                String data = line.substring(5);
-                data.trim();
-                // 输出读取的数据
-                //Serial.print("data: ");
-                //Serial.println(data);
-
-                int status = 0;
-                StaticJsonDocument<1024> jsonResponse;
-                // 解析收到的数据
-                DeserializationError error = deserializeJson(jsonResponse, data);
-
-                // 如果解析没有错误
-                if (!error)
-                {
-                    // B2 修复：delta 无 content 字段时返回 nullptr，判空后再使用，防止 strlen(nullptr) 崩溃
-                    const char *content = jsonResponse["choices"][0]["delta"]["content"] | nullptr;
-                    if (content != nullptr && strlen(content) > 0)
-                    {
-                        const char *removeSet = "\n*$"; // 定义需要移除的符号集
-                        // 计算新字符串的最大长度
-                        int length = strlen(content) + 1;
-                        char *cleanedContent = new char[length];
-                        removeChars(content, cleanedContent, removeSet);
-                        Serial.println(cleanedContent);
-
-                        // 将内容追加到Answer字符串中
-                        Answer += cleanedContent;
-                        // 释放分配的内存
-                        delete[] cleanedContent;
-                    }
-
-                    if (jsonResponse["choices"][0]["finish_reason"] == "stop")
-                    {
-                        status = 2;
-                        Serial.println("status: 2");
-                    }
-
-                    processResponse(status);
-
-                    if (status == 2)
-                    {
-                        stream->stop();
-                        break;
-                    }
-                }
-            }
-        }
+    if (askquestion.indexOf("天气") > -1 || askquestion.indexOf("几点了") > -1 || askquestion.indexOf("日期") > -1)
+    {
+        ConnServer();
         return;
     }
-    else
+    switch (llm)
     {
-        Serial.printf("Error %i \n", httpResponseCode);
-        Serial.println(http.getString());
-        http.end();
-        return;
+    case 0:
+        streamChat(kDoubao);   // 豆包
+        break;
+    case 1:
+        ConnServer();          // 讯飞星火
+        break;
+    case 2:
+        streamChat(kTongyi);   // 通义千问
+        break;
+    case 3:
+        streamChat(kChatgpt);  // chatgpt
+        break;
+    default:
+        ConnServer();          // 讯飞星火
+        break;
     }
 }
 
-// 问题发送给Chatgpt并接受回答，然后转成语音
-void chatgpt()
-{
-    HTTPClient http;
-    http.setTimeout(20000);     // 设置请求超时时间
-    http.begin(CHATGPT_URL);
-    http.addHeader("Content-Type", "application/json");
-    String token_key = String("Bearer ") + CHATGPT_API_KEY;
-    http.addHeader("Authorization", token_key);
-
-    // 向串口输出提示信息
-    Serial.println("Send message to chatgpt!");
-
-    // 生成连接参数的JSON文档
-    DynamicJsonDocument jsonData = gen_params_http(CHATGPT_MODEL, ROLE_SET);
-
-    // 将JSON文档序列化为字符串
-    String jsonString;
-    serializeJson(jsonData, jsonString);
-
-    // 向串口输出生成的JSON字符串
-    Serial.println(jsonString);
-    int httpResponseCode = http.POST(jsonString);
-
-    if (httpResponseCode == 200) {
-        // 在 stream（流式调用） 模式下，基于 SSE (Server-Sent Events) 协议返回生成内容，每次返回结果为生成的部分内容片段
-        WiFiClient* stream = http.getStreamPtr();   // 返回一个指向HTTP响应流的指针，通过它可以读取服务器返回的数据
-
-        while (stream->connected()) {   // 这个循环会一直运行，直到客户端（即stream）断开连接。
-            String line = stream->readStringUntil('\n');    // 从流中读取一行字符串，直到遇到换行符\n为止
-            // 检查读取的行是否以data:开头。
-            // 在SSE（Server-Sent Events）协议中，服务器发送的数据行通常以data:开头，这样客户端可以识别出这是实际的数据内容。
-            if (line.startsWith("data:")) {
-                // 如果行以data:开头，提取出data:后面的部分，并去掉首尾的空白字符。
-                String data = line.substring(5);
-                data.trim();
-                // 输出读取的数据
-                //Serial.print("data: ");
-                //Serial.println(data);
-
-                int status = 0;
-                StaticJsonDocument<400> jsonResponse;
-                // 解析收到的数据
-                DeserializationError error = deserializeJson(jsonResponse, data);
-
-                // 如果解析没有错误
-                if (!error)
-                {
-                    if (jsonResponse["choices"][0]["finish_reason"] == "stop")
-                    {
-                        status = 2;
-                        Serial.println("status: 2");
-                    }
-                    else
-                    {
-                        // B2 修复：delta 无 content 字段时返回 nullptr，判空后再使用，防止 strlen(nullptr) 崩溃
-                        const char *content = jsonResponse["choices"][0]["delta"]["content"] | nullptr;
-                        if (content != nullptr && strlen(content) > 0)
-                        {
-                            const char *removeSet = "\n*$"; // 定义需要移除的符号集
-                            // 计算新字符串的最大长度
-                            int length = strlen(content) + 1;
-                            char *cleanedContent = new char[length];
-                            removeChars(content, cleanedContent, removeSet);
-                            Serial.println(cleanedContent);
-
-                            // 将内容追加到Answer字符串中
-                            Answer += cleanedContent;
-                            // 释放分配的内存
-                            delete[] cleanedContent;
-                        }
-                    }
-
-                    processResponse(status);
-
-                    if (status == 2)
-                    {
-                        stream->stop();
-                        break;
-                    }
-                }
-            }
-        }
-        return;
-    }
-    else
-    {
-        Serial.printf("Error %i \n", httpResponseCode);
-        Serial.println(http.getString());
-        http.end();
-        return;
-    }
-}
