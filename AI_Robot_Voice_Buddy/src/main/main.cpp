@@ -1187,16 +1187,11 @@ void onMessageCallback1(WebsocketsMessage message)
                 text_temp = "";
             }
 
-            if (askquestion.indexOf("九哥"))
-            {
-                askquestion.replace("九哥", "九歌");
-            }
-
             // 如果正处于待机状态，则判断唤醒词是否正确
             if (await_flag == 1)
             {
                 // 增加足够多的同音字可以提高唤醒率，支持多唤醒词唤醒(askquestion.indexOf("你好") > -1 || askquestion.indexOf("您好") > -1) &&
-                if( (askquestion.indexOf("坤坤") > -1 || askquestion.indexOf("小白") > -1 || askquestion.indexOf("丁真") > -1 || askquestion.indexOf("九歌") > -1))
+                if( (askquestion.indexOf("小白") > -1 || askquestion.indexOf("小花") > -1))
                 {
                     await_flag = 0;     //退出待机状态
                     start_con = 1;      //对话开始标识
@@ -1329,7 +1324,7 @@ void onMessageCallback1(WebsocketsMessage message)
                 if (askquestion.indexOf("不想") > -1 || askquestion.indexOf("暂停") > -1)
                 {
                     musicplay = 0;
-                    Answer = "好的，那主人还有其它吩咐吗？喵~";
+                    Answer = "好的，那主人还有其它吩咐吗？";
                     speakAndDisplay(Answer);
                     Answer = "";
                     conStatus = 0;
@@ -1357,7 +1352,7 @@ void onMessageCallback1(WebsocketsMessage message)
                     if (musicplay == 0)
                     {
                         flag = 1;
-                        Answer = "音乐播放完了，主人还想听什么音乐吗？喵~";
+                        Answer = "音乐播放完了，主人还想听什么音乐吗？";
                     }
                     conflag = 1;
                 }
@@ -1488,7 +1483,7 @@ void onMessageCallback1(WebsocketsMessage message)
                         if (musicplay == 0)
                         {
                             flag = 1;
-                            Answer = "音乐播放完了，主人还想听什么音乐吗？喵~";
+                            Answer = "音乐播放完了，主人还想听什么音乐吗？";
                         }
                         conflag = 1;
                     }
@@ -1545,7 +1540,7 @@ void onMessageCallback1(WebsocketsMessage message)
                 if (askquestion.indexOf("不想") > -1)
                 {
                     mainStatus = 0;
-                    Answer = "好的，那主人还有其它吩咐吗？喵~";
+                    Answer = "好的，那主人还有其它吩咐吗？";
                     speakAndDisplay(Answer);
                     Answer = "";
                     conflag = 1;
@@ -1606,7 +1601,7 @@ void onMessageCallback1(WebsocketsMessage message)
                 {
                     mainStatus = 1;
                     Serial.println("未找到对应的音乐！");
-                    Answer = "好的喵，主人，你想听哪首歌呢，喵~";
+                    Answer = "好的，主人，你想听哪首歌呢?";
                     speakAndDisplay(Answer);
                     Answer = "";
                     conflag = 1;
@@ -1642,7 +1637,7 @@ void onMessageCallback1(WebsocketsMessage message)
                 u8g2.sendBuffer();
                 u8g2.setCursor(0, 0);
                 getText("user", askquestion);
-                Answer = "这就开始放映主人喜欢的图片，喵~";
+                Answer = "这就开始放映主人喜欢的图片。";
                 speakAndDisplay(Answer);
                 getText("assistant", Answer, false);
                 Answer = "";
@@ -1783,7 +1778,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
                 if (start_con == 1)     // 表示正处于对话中，才回复退下，没有进入对话则继续待机
                 {
                     start_con = 0;      // 退出对话
-                    Answer = "主人，我先退下了，有事再找我喵~";
+                    Answer = "主人，我先退下了，有事再找我~";
                     response();     //屏幕显示Answer以及语音播放
                 }
                 // 标识正处于待机状态
