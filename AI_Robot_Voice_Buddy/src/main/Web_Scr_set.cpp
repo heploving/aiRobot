@@ -1,7 +1,5 @@
 #include "Web_Scr_set.h"
-
-// 创建屏幕对象
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);
+#include "display.h"
 
 // AP模式的SSID和密码
 const char *ap_ssid = "ESP32-Setup";

@@ -15,13 +15,7 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
-// 与屏幕显示有关的库
-#include <U8g2lib.h>
-#define width   128     //屏幕宽度
-#define height  64      //屏幕高度
 
-// 创建屏幕对象
-extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2;
 // AP模式的SSID和密码
 extern const char *ap_ssid;
 extern const char *ap_password;

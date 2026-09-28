@@ -1,6 +1,7 @@
 #include "config.h"
 #include "Web_Scr_set.h"
 #include "recorder.h"
+#include "display.h"
 
 int llm = 1;    // 大模型选择参数:0:豆包，1：讯飞星火，2：通义千问，3：ChatGPT
 
@@ -61,11 +62,7 @@ Audio2 audio2(false, 3, I2S_NUM_1);
 DynamicJsonDocument gen_params(const char *appid, const char *domain, const char *role_set);
 DynamicJsonDocument gen_params_http(const char *model, const char *role_set);
 void processResponse(int status);
-void displayWrappedText(const string &text1, int x, int y, int maxWidth);
 void speakAndDisplay(String text);
-void displayProgress(String text, int showBytes);
-int speechMs(String text);
-int bytesForMs(String text, int ms);
 void getText(String role, String content, bool show = true);
 void checkLen();
 void removeChars(const char *input, char *output, const char *removeSet);
@@ -118,7 +115,7 @@ void voicePlay()
         askquestion = "正在顺序播放所有音乐，当前正在播放：" + musicName;
         Serial.println(askquestion);
         // 打印内容
-        displayWrappedText(askquestion.c_str(), 0, cursorY + 11, width);
+        displayWrappedText(askquestion.c_str(), 0, cursorY + 11, SCREEN_WIDTH);
         askquestion = "";
         preferences.end();
         startPlay = true;
@@ -164,34 +161,8 @@ void setup()
     // 将light初始化为低电平
     digitalWrite(LIGHT_PIN, LOW);
 
-    // 初始化屏幕
-    Wire.begin(OLED_SDA, OLED_SCL);     // OLED I2C（引脚见 config.h）
-    // 扫描 I2C 总线，自动适配 OLED 地址（0x3C 或 0x3D）
-    {
-      bool addr3D = false;
-      Serial.println("I2C scan:");
-      for (uint8_t addr = 1; addr < 127; addr++)
-      {
-        Wire.beginTransmission(addr);
-        if (Wire.endTransmission() == 0)
-        {
-          Serial.printf("  found 0x%02X\n", addr);
-          if (addr == 0x3D) addr3D = true;
-        }
-      }
-      if (addr3D) u8g2.setI2CAddress(0x3D << 1);
-    }
-    u8g2.begin();                        // SSD1306 0.96寸 OLED
-
-    // 初始化U8g2
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312); // 12px UTF-8 中文字体（GB2312全集7533字，chinese3子集缺常用字如"待"）
-    u8g2.enableUTF8Print();                     // 启用 UTF-8 打印
-    u8g2.setFontMode(1);                    // 设置字体模式为透明模式，不设置的话中文字符会变成一个黑色方块
-    u8g2.setDrawColor(1);                   // 单色屏: 1=点亮
-    // 显示文字
-    u8g2.setCursor(0, 11);
-    u8g2.print("已开机！");
-    u8g2.sendBuffer();
+    // 初始化屏幕（I2C 地址扫描、字体、开机画面）
+    displayInit();
 
     // 初始化录音模块
     recorder.init();
@@ -234,7 +205,7 @@ void setup()
         u8g2.sendBuffer();
         u8g2.setCursor(0, 11);
         u8g2.print("网络连接成功！");
-        displayWrappedText("请进行语音唤醒或按boot键开始对话！", 0, u8g2.getCursorY() + 12, width);
+        displayWrappedText("请进行语音唤醒或按boot键开始对话！", 0, u8g2.getCursorY() + 12, SCREEN_WIDTH);
         awake_flag = 0;
     }
     else
@@ -314,192 +285,6 @@ void loop()
     {
         StartConversation();
     }
-}
-
-// 自动换行显示u8g2文本的函数
-void displayWrappedText(const string &text1, int x, int y, int maxWidth)
-{
-    int cursorX = x;
-    int cursorY = y;
-    int lineHeight = u8g2.getFontAscent() - u8g2.getFontDescent() + 2; // 中文字符12像素高度
-    int start = 0;                                                     // 指示待输出字符串已经输出到哪一个字符
-    int num = text1.size();
-    int i = 0;
-
-    while (start < num)
-    {
-        u8g2.setCursor(cursorX, cursorY);
-        int wid = 0;
-        int numBytes = 0;
-
-        // Calculate how many bytes fit in the maxWidth
-        while (i < num)
-        {
-            int size = 1;
-            if (text1[i] & 0x80)
-            { // 核心所在
-                char temp = text1[i];
-                temp <<= 1;
-                do
-                {
-                    temp <<= 1;
-                    ++size;
-                } while (temp & 0x80);
-            }
-            string subWord;
-            subWord = text1.substr(i, size); // 取得单个中文或英文字符
-
-            int charBytes = subWord.size(); // 获取字符的字节长度
-
-            int charWidth = charBytes == 3 ? 12 : 6; // 中文字符12像素宽度，英文字符6像素宽度
-            if (wid + charWidth > maxWidth - cursorX)
-            {
-                break;
-            }
-            numBytes += charBytes;
-            wid += charWidth;
-
-            i += size;
-        }
-
-        if (cursorY <= height - 10)
-        {
-            u8g2.print(text1.substr(start, numBytes).c_str());
-            cursorY += lineHeight;
-            cursorX = 0;
-            start += numBytes;
-        }
-        else
-        {
-            text_temp = text1.substr(start).c_str();
-            break;
-        }
-    }
-    u8g2.sendBuffer();
-}
-
-// 返回位置 i 处 UTF-8 字符占用的字节数（1~4）
-int utf8CharSize(const char *s, int i)
-{
-    int size = 1;
-    if (s[i] & 0x80)
-    {
-        char temp = s[i];
-        temp <<= 1;
-        do
-        {
-            temp <<= 1;
-            ++size;
-        } while (temp & 0x80);
-    }
-    return size;
-}
-
-// 单个 UTF-8 字符的预估播报时长（毫秒），按百度TTS spd=6 语速估算，可按实测微调
-int charMs(String text, int i)
-{
-    int size = utf8CharSize(text.c_str(), i);
-    int ms = size == 3 ? 190 : 90;   // 中文每字约190ms，ASCII约90ms
-    if (size == 3)
-    {
-        const char *p = text.c_str() + i;
-        if (!strncmp(p, "。", 3) || !strncmp(p, "！", 3) || !strncmp(p, "？", 3) ||
-            !strncmp(p, "；", 3) || !strncmp(p, "，", 3) || !strncmp(p, "、", 3) ||
-            !strncmp(p, "：", 3) || !strncmp(p, "…", 3))
-            ms += 250;   // 标点附加停顿
-    }
-    return ms;
-}
-
-// 估算一段文字用百度TTS播报的总时长（毫秒）
-int speechMs(String text)
-{
-    int ms = 0;
-    for (int i = 0; i < text.length(); i += utf8CharSize(text.c_str(), i))
-        ms += charMs(text, i);
-    return ms;
-}
-
-// 按语音进度换算应显示的字节数（截断到 UTF-8 整字符边界）
-int bytesForMs(String text, int ms)
-{
-    int acc = 0;
-    int i = 0;
-    while (i < text.length())
-    {
-        acc += charMs(text, i);
-        i += utf8CharSize(text.c_str(), i);
-        if (acc >= ms)
-            return i;
-    }
-    return text.length();
-}
-
-// 打字机式显示：只显示文字前 showBytes 字节，超出屏幕时滚动显示末尾几行
-void displayProgress(String text, int showBytes)
-{
-    u8g2.clearBuffer();
-    if (showBytes <= 0)
-    {
-        u8g2.sendBuffer();
-        return;
-    }
-    if (showBytes > text.length())
-        showBytes = text.length();
-
-    int lineHeight = u8g2.getFontAscent() - u8g2.getFontDescent() + 2;
-    int startY = 11;   // 与 displayWrappedText 保持一致
-    int maxLines = 0;
-    for (int y = startY; y <= height - 10; y += lineHeight)
-        maxLines++;
-
-    // 第一遍：按屏宽换行，记录每行起点（字节偏移）
-    int lineStarts[80];
-    int lineCount = 0;
-    int i = 0;
-    int wid = 0;
-    lineStarts[lineCount++] = 0;
-    while (i < showBytes)
-    {
-        int size = utf8CharSize(text.c_str(), i);
-        int charWidth = size == 3 ? 12 : 6;
-        if (wid + charWidth > width)
-        {
-            lineStarts[lineCount++] = i;
-            wid = 0;
-        }
-        wid += charWidth;
-        i += size;
-    }
-
-    // 若超过一屏，只显示最后 maxLines 行（跟随语音的滚动窗口）
-    int pos = (lineCount > maxLines) ? lineStarts[lineCount - maxLines] : 0;
-
-    // 第二遍：从窗口起点按行打印
-    int y = startY;
-    while (pos < showBytes && y <= height - 10)
-    {
-        int lineBytes = 0;
-        int w = 0;
-        int j = pos;
-        while (j < showBytes)
-        {
-            int size = utf8CharSize(text.c_str(), j);
-            int charWidth = size == 3 ? 12 : 6;
-            if (w + charWidth > width)
-                break;
-            w += charWidth;
-            lineBytes += size;
-            j += size;
-        }
-        if (lineBytes == 0)
-            break;
-        u8g2.setCursor(0, y);
-        u8g2.print(text.substring(pos, pos + lineBytes).c_str());   // substring(起, 止) 第二参数是结束位置
-        y += lineHeight;
-        pos += lineBytes;
-    }
-    u8g2.sendBuffer();
 }
 
 // 发起TTS播报，文字交给同步显示（随语音逐字出现）
@@ -943,10 +728,7 @@ void VolumeSet()
         Serial.print("当前音量为: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        u8g2.setCursor(88, 0);
-        u8g2.print("音量:");
-        u8g2.print(volume);
-        u8g2.sendBuffer();
+        showVolume(volume);
     }
     else if (numberStr.length() > 0)
     {
@@ -955,10 +737,7 @@ void VolumeSet()
         Serial.print("音量已调到: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        u8g2.setCursor(88, 0);
-        u8g2.print("音量:");
-        u8g2.print(volume);
-        u8g2.sendBuffer();
+        showVolume(volume);
     }
     else if (askquestion.indexOf("最") > -1 && (askquestion.indexOf("高") > -1 || askquestion.indexOf("大") > -1))
     {
@@ -967,10 +746,7 @@ void VolumeSet()
         Serial.print("音量已调到: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        u8g2.setCursor(88, 0);
-        u8g2.print("音量:");
-        u8g2.print(volume);
-        u8g2.sendBuffer();
+        showVolume(volume);
     }
     else if (askquestion.indexOf("高") > -1 || askquestion.indexOf("大") > -1)
     {
@@ -983,10 +759,7 @@ void VolumeSet()
         Serial.print("音量已调到: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        u8g2.setCursor(88, 0);
-        u8g2.print("音量:");
-        u8g2.print(volume);
-        u8g2.sendBuffer();
+        showVolume(volume);
     }
     else if (askquestion.indexOf("最") > -1 && (askquestion.indexOf("低") > -1 || askquestion.indexOf("小") > -1))
     {
@@ -995,10 +768,7 @@ void VolumeSet()
         Serial.print("音量已调到: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        u8g2.setCursor(88, 0);
-        u8g2.print("音量:");
-        u8g2.print(volume);
-        u8g2.sendBuffer();
+        showVolume(volume);
     }
     else if (askquestion.indexOf("低") > -1 || askquestion.indexOf("小") > -1)
     {
@@ -1011,10 +781,7 @@ void VolumeSet()
         Serial.print("音量已调到: ");
         Serial.println(volume);
         // 在屏幕上显示音量
-        u8g2.setCursor(88, 0);
-        u8g2.print("音量:");
-        u8g2.print(volume);
-        u8g2.sendBuffer();
+        showVolume(volume);
     }
     conflag = 1;
 }
@@ -1140,9 +907,9 @@ void onMessageCallback1(WebsocketsMessage message)
                 u8g2.clearBuffer();
                 u8g2.sendBuffer();
                 u8g2.setCursor(0, 0);
-                displayWrappedText("网络连接已断开，请重启设备以再次建立连接！", u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                displayWrappedText("网络连接已断开，请重启设备以再次建立连接！", u8g2.getCursorX(), u8g2.getCursorY() + 2, SCREEN_WIDTH);
                 openWeb();
-                displayWrappedText("热点ESP32-Setup已开启，密码为12345678，可在浏览器中打开http://192.168.4.1进行网络和音乐信息配置！", 0, u8g2.getCursorY() + 12, width);
+                displayWrappedText("热点ESP32-Setup已开启，密码为12345678，可在浏览器中打开http://192.168.4.1进行网络和音乐信息配置！", 0, u8g2.getCursorY() + 12, SCREEN_WIDTH);
             }
             else if (audio2.isplaying == 1 && askquestion.indexOf("暂停") > -1)
             {
@@ -1219,7 +986,7 @@ void onMessageCallback1(WebsocketsMessage message)
                 u8g2.sendBuffer();
                 u8g2.setCursor(0, 0);
                 u8g2.print("user: ");
-                displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, SCREEN_WIDTH);
                 cursorY = u8g2.getCursorY() + 1;
                 u8g2.setCursor(0, u8g2.getCursorY() + 2);
 
@@ -1256,7 +1023,7 @@ void onMessageCallback1(WebsocketsMessage message)
                     else
                         askquestion = "正在顺序播放所有音乐，当前正在播放：" + musicName;
                     Serial.println(askquestion);
-                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, SCREEN_WIDTH);
                     startPlay = true;   // 设置播放开始标志
                     if (musicplay == 0)
                     {
@@ -1282,7 +1049,7 @@ void onMessageCallback1(WebsocketsMessage message)
                     else
                         askquestion = "正在顺序播放所有音乐，当前正在播放：" + musicName;
                     Serial.println(askquestion);
-                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, SCREEN_WIDTH);
                     startPlay = true;   // 设置播放开始标志
                     if (musicplay == 0)
                     {
@@ -1307,7 +1074,7 @@ void onMessageCallback1(WebsocketsMessage message)
                     else
                         askquestion = "正在顺序播放所有音乐，当前正在播放：" + musicName;
                     Serial.println(askquestion);
-                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, SCREEN_WIDTH);
                     startPlay = true;   // 设置播放开始标志
                     if (musicplay == 0)
                     {
@@ -1387,7 +1154,7 @@ void onMessageCallback1(WebsocketsMessage message)
                         else
                             askquestion = "正在顺序播放所有音乐，当前正在播放：" + musicName;
                         Serial.println(askquestion);
-                        displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                        displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, SCREEN_WIDTH);
                         startPlay = true;   // 设置播放开始标志
                         if (musicplay == 0)
                         {
@@ -1437,7 +1204,7 @@ void onMessageCallback1(WebsocketsMessage message)
                 u8g2.sendBuffer();
                 u8g2.setCursor(0, 0);
                 u8g2.print("user: ");
-                displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, SCREEN_WIDTH);
                 cursorY = u8g2.getCursorY() + 1;
                 u8g2.setCursor(0, u8g2.getCursorY() + 2);
 
@@ -1528,7 +1295,7 @@ void onMessageCallback1(WebsocketsMessage message)
                     else
                         askquestion = "开始顺序播放所有音乐，当前正在播放：" + musicName;
                     Serial.println(askquestion);
-                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, width);
+                    displayWrappedText(askquestion.c_str(), u8g2.getCursorX(), u8g2.getCursorY() + 2, SCREEN_WIDTH);
                     startPlay = true;   // 设置播放开始标志
                     conStatus = 1;
                     if (musicplay == 0)
@@ -1853,7 +1620,7 @@ int wifiConnect()
         // 在屏幕上输出提示信息
         u8g2.setCursor(0, u8g2.getCursorY() + 12);
         u8g2.print("无任何wifi存储信息！");
-        displayWrappedText("请连接热点ESP32-Setup密码为12345678，然后在浏览器中打开http://192.168.4.1添加新的网络！", 0, u8g2.getCursorY() + 12, width);
+        displayWrappedText("请连接热点ESP32-Setup密码为12345678，然后在浏览器中打开http://192.168.4.1添加新的网络！", 0, u8g2.getCursorY() + 12, SCREEN_WIDTH);
         preferences.end();
         return 0;
     }
@@ -1926,7 +1693,7 @@ int wifiConnect()
     u8g2.print("网络设备，确认可用后");
     u8g2.setCursor(0, u8g2.getCursorY() + 12);
     u8g2.print("重启设备以建立连接！");
-    displayWrappedText("或者连接热点ESP32-Setup密码为12345678，然后在浏览器中打开http://192.168.4.1添加新的网络！", 0, u8g2.getCursorY() + 12, width);
+    displayWrappedText("或者连接热点ESP32-Setup密码为12345678，然后在浏览器中打开http://192.168.4.1添加新的网络！", 0, u8g2.getCursorY() + 12, SCREEN_WIDTH);
     preferences.end();
     return 0;
 }
