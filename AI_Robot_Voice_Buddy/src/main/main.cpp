@@ -119,16 +119,21 @@ void StartConversation()
 {
     askquestion = "";
     Serial.printf("Start recognition\r\n\r\n");
-    // 如果距离上次时间同步超过4分钟
-    if (urlTime + 240000 < millis()) // 超过4分钟，重新做一次鉴权
+    // 如果距离上次鉴权超过4分钟（差值比较，防 millis 回绕）
+    if ((unsigned long)(millis() - urlTime) >= AUTH_REFRESH_MS)
     {
-        // 更新时间戳
-        urlTime = millis();
-        // 从服务器获取当前时间
-        getTimeFromServer();
-        // 更新WebSocket连接的URL
-        url = getUrl(XF_SPARK_WS, XF_SPARK_HOST, XF_SPARK_PATH, Date);
-        url1 = getUrl(XF_IAT_WS, XF_IAT_HOST, XF_IAT_PATH, Date);
+        // 从服务器获取当前时间并更新鉴权 URL
+        // （B10 修复：失败时保持 urlTime=0，下次对话强制重新鉴权）
+        if (getTimeFromServer())
+        {
+            url = getUrl(XF_SPARK_WS, XF_SPARK_HOST, XF_SPARK_PATH, Date);
+            url1 = getUrl(XF_IAT_WS, XF_IAT_HOST, XF_IAT_PATH, Date);
+            urlTime = millis();
+        }
+        else
+        {
+            urlTime = 0;
+        }
     }
     // 连接到WebSocket服务器1讯飞stt
     ConnServer1();
@@ -181,11 +186,18 @@ void setup()
     u8g2.sendBuffer();
     int result = wifiConnect();
 
-    // 从百度服务器获取当前时间
-    getTimeFromServer();
-    // 使用当前时间生成WebSocket连接的URL
-    url = getUrl(XF_SPARK_WS, XF_SPARK_HOST, XF_SPARK_PATH, Date);
-    url1 = getUrl(XF_IAT_WS, XF_IAT_HOST, XF_IAT_PATH, Date);
+    // 从百度服务器获取当前时间并生成鉴权 URL
+    // （B10 修复：失败时保持 urlTime=0，下次对话强制重新鉴权）
+    if (getTimeFromServer())
+    {
+        url = getUrl(XF_SPARK_WS, XF_SPARK_HOST, XF_SPARK_PATH, Date);
+        url1 = getUrl(XF_IAT_WS, XF_IAT_HOST, XF_IAT_PATH, Date);
+        urlTime = millis();
+    }
+    else
+    {
+        urlTime = 0;
+    }
 
     if (result == 1)
     {
@@ -201,8 +213,6 @@ void setup()
     {
         openWeb();
     }
-    // 记录当前时间，用于后续时间戳比较
-    urlTime = millis();
     // 延迟1000毫秒，便于用户查看屏幕显示的信息，同时使设备充分初始化
     delay(1000);
 }

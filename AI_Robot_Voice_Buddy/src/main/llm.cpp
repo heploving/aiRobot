@@ -25,11 +25,8 @@ WebsocketsClient webSocketClient;
 
 void getText(String role, String content, bool show)
 {
-    // 检查并调整文本长度
-    checkLen();
-
-    // 创建一个静态JSON文档，容量为512字节
-    StaticJsonDocument<512> jsoncon;
+    // 创建一个静态JSON文档（容量过小会静默截断历史，B4 修复：512→HISTORY_JSON_DOC_BYTES）
+    StaticJsonDocument<HISTORY_JSON_DOC_BYTES> jsoncon;
 
     // 设置JSON文档中的角色和内容
     jsoncon["role"] = role;
@@ -39,10 +36,20 @@ void getText(String role, String content, bool show)
 
     // 将JSON文档序列化为字符串
     String jsonString;
-    serializeJson(jsoncon, jsonString);
+    size_t serialized = serializeJson(jsoncon, jsonString);
+    if (serialized == 0)
+    {
+        // 序列化失败（容量不足）：本条不存入，避免历史出现不完整条目（B4 修复）
+        Serial.println("WARN: 对话历史序列化失败，本条不存入");
+        return;
+    }
 
     // 将字符串存储到vector中
     text.push_back(jsonString);
+
+    // 先存后清：保证最新一问一答永远不会被清理
+    // （B5 修复：原实现先 checkLen 再 push，单条超长时会把刚加入的问题删掉）
+    checkLen();
 
     // 输出vector中的内容
     for (const auto& jsonStr : text) {
@@ -73,12 +80,25 @@ void checkLen()
     }
     Serial.print("text size:");
     Serial.println(totalBytes);
-    // 当vector中的字符串总长度超过800字节时，删除最开始的一对对话
-    if (totalBytes > 800)
+    // 超过 HISTORY_MAX_BYTES 字节时，成对删除最旧的一问一答；
+    // 只删到剩最后一对为止，最新条目永不删除（B5 修复）
+    while (totalBytes > HISTORY_MAX_BYTES && text.size() > 2)
     {
         Serial.println("totalBytes大于800,删除最开始的一对对话");
+        totalBytes -= text[0].length() + text[1].length();
         text.erase(text.begin(), text.begin() + 2);
     }
+}
+
+// 按 UTF-8 整字符边界截断：返回不超过 maxBytes 的最大字节位置
+// （B1 修复的辅助函数：强制截断长回答时避免切断多字节字符）
+int trimToUtf8Boundary(const String &s, int maxBytes)
+{
+    if (s.length() <= maxBytes) return s.length();
+    int pos = maxBytes;
+    // 若落在 UTF-8 后续字节（10xxxxxx）上，回退到该字符的起始字节
+    while (pos > 0 && ((uint8_t)s[pos] & 0xC0) == 0x80) pos--;
+    return pos;
 }
 
 DynamicJsonDocument gen_params(const char *appid, const char *domain, const char *role_set)
@@ -120,7 +140,7 @@ DynamicJsonDocument gen_params(const char *appid, const char *domain, const char
     }*/
     // 将jsonVector中的内容添加到JsonArray中
     for (const auto& jsonStr : text) {
-        DynamicJsonDocument tempDoc(512);
+        DynamicJsonDocument tempDoc(HISTORY_JSON_DOC_BYTES);
         DeserializationError error = deserializeJson(tempDoc, jsonStr);
         if (!error) {
             textArray.add(tempDoc.as<JsonVariant>());
@@ -158,7 +178,7 @@ DynamicJsonDocument gen_params_http(const char *model, const char *role_set)
     }*/
     // 将jsonVector中的内容添加到JsonArray中
     for (const auto& jsonStr : text) {
-        DynamicJsonDocument tempDoc(512);
+        DynamicJsonDocument tempDoc(HISTORY_JSON_DOC_BYTES);
         DeserializationError error = deserializeJson(tempDoc, jsonStr);
         if (!error) {
             textArray.add(tempDoc.as<JsonVariant>());
@@ -173,10 +193,10 @@ DynamicJsonDocument gen_params_http(const char *model, const char *role_set)
 
 void processResponse(int status)
 {
-    // 如果Answer的长度超过180且音频没有播放
-    if (Answer.length() >= 180 && (audio2.isplaying == 0) && flag == 0)
+    // 如果Answer的长度超过SEGMENT_SHORT_BYTES且音频没有播放
+    if (Answer.length() >= SEGMENT_SHORT_BYTES && (audio2.isplaying == 0) && flag == 0)
     {
-        if (Answer.length() >= 300)
+        if (Answer.length() >= SEGMENT_LONG_BYTES)
         {
             // 查找第一个句号的位置
             int firstPeriodIndex = Answer.indexOf("。");
@@ -199,7 +219,7 @@ void processResponse(int status)
             if (firstPeriodIndex != -1)
             {
                 // 提取完整的句子并播放
-                String subAnswer1 = Answer.substring(0, firstPeriodIndex + 3);
+                String subAnswer1 = Answer.substring(0, firstPeriodIndex + UTF8_CJK_BYTES);
                 Serial.print("subAnswer1:");
                 Serial.println(subAnswer1);
 
@@ -211,14 +231,26 @@ void processResponse(int status)
                 flag = 1;
 
                 // 更新Answer，去掉已处理的部分
-                Answer = Answer.substring(firstPeriodIndex + 3);
+                Answer = Answer.substring(firstPeriodIndex + UTF8_CJK_BYTES);
                 subAnswer1.clear();
                 // 设置播放开始标志
                 startPlay = true;
             }
             else
             {
-                Serial.println("问题里面句号、分号、问号、感叹号断句都没有！");
+                // 找不到任何断句标点：强制截断首段并播放
+                // （B1 修复：原实现只打印不缩减 Answer，长文本无标点时一直不发声）
+                int cut = trimToUtf8Boundary(Answer, SEGMENT_LONG_BYTES);
+                if (cut <= 0) cut = SEGMENT_LONG_BYTES;   // 防御：cut 不会为 0（maxBytes≥300）
+                String subAnswer1 = Answer.substring(0, cut);
+                Serial.print("subAnswer1(强制截断):");
+                Serial.println(subAnswer1);
+                speakAndDisplay(subAnswer1);
+                getText("assistant", subAnswer1, false);
+                flag = 1;
+                Answer = Answer.substring(cut);
+                subAnswer1.clear();
+                startPlay = true;
             }
         }
         else
@@ -227,13 +259,13 @@ void processResponse(int status)
             int lastCommaIndex = Answer.lastIndexOf("，");
             if (lastCommaIndex != -1)
             {
-                String subAnswer1 = Answer.substring(0, lastCommaIndex + 3);
+                String subAnswer1 = Answer.substring(0, lastCommaIndex + UTF8_CJK_BYTES);
                 Serial.print("subAnswer1:");
                 Serial.println(subAnswer1);
                 speakAndDisplay(subAnswer1);
                 getText("assistant", subAnswer1, false);
                 flag = 1;
-                Answer = Answer.substring(lastCommaIndex + 3);
+                Answer = Answer.substring(lastCommaIndex + UTF8_CJK_BYTES);
                 subAnswer1.clear();
                 startPlay = true;
             }
@@ -252,10 +284,11 @@ void processResponse(int status)
         }
         conflag = 1;
     }
-    // 存储多段子音频
-    while (Answer.length() >= 180)
+    // 存储多段子音频（guard 为保险上限，正常每轮循环都会缩减 Answer，B1 修复）
+    int guard = 0;
+    while (Answer.length() >= SEGMENT_SHORT_BYTES && guard++ < 50)
     {
-        if (Answer.length() >= 300)
+        if (Answer.length() >= SEGMENT_LONG_BYTES)
         {
             // 查找第一个句号的位置
             int firstPeriodIndex = Answer.indexOf("。");
@@ -277,17 +310,27 @@ void processResponse(int status)
             // 如果找到
             if (firstPeriodIndex != -1)
             {
-                subAnswers.push_back(Answer.substring(0, firstPeriodIndex + 3));
+                subAnswers.push_back(Answer.substring(0, firstPeriodIndex + UTF8_CJK_BYTES));
                 Serial.print("subAnswer");
                 Serial.print(subAnswers.size() + 1);
                 Serial.print("：");
                 Serial.println(subAnswers[subAnswers.size() - 1]);
 
-                Answer = Answer.substring(firstPeriodIndex + 3);
+                Answer = Answer.substring(firstPeriodIndex + UTF8_CJK_BYTES);
             }
             else
             {
-                Serial.println("问题里面句号、分号、问号、感叹号断句都没有！");
+                // 找不到断句标点：强制按 SEGMENT_LONG_BYTES 截断
+                // （B1 修复：原实现只打印不缩减，while 条件永远成立 → 死循环 → 看门狗复位）
+                int cut = trimToUtf8Boundary(Answer, SEGMENT_LONG_BYTES);
+                if (cut <= 0) cut = SEGMENT_LONG_BYTES;   // 防御：cut 不会为 0（maxBytes≥300）
+                subAnswers.push_back(Answer.substring(0, cut));
+                Serial.print("subAnswer");
+                Serial.print(subAnswers.size() + 1);
+                Serial.print("：");
+                Serial.println(subAnswers[subAnswers.size() - 1]);
+
+                Answer = Answer.substring(cut);
             }
         }
         else
@@ -295,13 +338,13 @@ void processResponse(int status)
             int lastCommaIndex = Answer.lastIndexOf("，");
             if (lastCommaIndex != -1)
             {
-                subAnswers.push_back(Answer.substring(0, lastCommaIndex + 3));
+                subAnswers.push_back(Answer.substring(0, lastCommaIndex + UTF8_CJK_BYTES));
                 Serial.print("subAnswer");
                 Serial.print(subAnswers.size() + 1);
                 Serial.print("：");
                 Serial.println(subAnswers[subAnswers.size() - 1]);
 
-                Answer = Answer.substring(lastCommaIndex + 3);
+                Answer = Answer.substring(lastCommaIndex + UTF8_CJK_BYTES);
             }
             else
             {
@@ -316,7 +359,7 @@ void processResponse(int status)
         }
     }
 
-    // 如果status为2（回复的内容接收完成），且回复的内容小于180字节
+    // 如果status为2（回复的内容接收完成），且回复的内容小于SEGMENT_SHORT_BYTES
     if (status == 2 && flag == 0)
     {
         // 播放最终转换的文本，文字随语音同步显示
@@ -332,7 +375,7 @@ void processResponse(int status)
 // 将回复的文本转成语音
 void onMessageCallback(WebsocketsMessage message)
 {
-    // 创建一个静态JSON文档对象，用于存储解析后的JSON数据，最大容量为4096字节，硬件限制，无法再增加
+    // 创建一个静态JSON文档对象，用于存储解析后的JSON数据（容量 1024 字节，实测够用）
     StaticJsonDocument<1024> jsonDocument;
 
     // 解析收到的JSON数据
@@ -374,7 +417,6 @@ void onMessageCallback(WebsocketsMessage message)
 
             // 将内容追加到Answer字符串中
             Answer += cleanedContent;
-            content = "";
             // 释放分配的内存
             delete[] cleanedContent;
 
@@ -452,17 +494,27 @@ void ConnServer()
     }
 }
 
-void getTimeFromServer()
+bool getTimeFromServer()
 {
-    String timeurl = TIME_SERVER_URL;   // 定义用于获取时间的URL
     HTTPClient http;                // 创建HTTPClient对象
-    http.begin(timeurl);            // 初始化HTTP连接
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.begin(TIME_SERVER_URL);    // 初始化HTTP连接
     const char *headerKeys[] = {"Date"};        // 定义需要收集的HTTP头字段
     http.collectHeaders(headerKeys, sizeof(headerKeys) / sizeof(headerKeys[0]));    // 设置要收集的HTTP头字段
     int httpCode = http.GET();      // 发送HTTP GET请求
-    Date = http.header("Date");     // 从HTTP响应头中获取Date字段
-    Serial.println(Date);           // 输出获取到的Date字段到串口
+    String serverDate = http.header("Date");     // 从HTTP响应头中获取Date字段
     http.end();                     // 结束HTTP连接
+
+    // B10 修复：请求失败或缺少 Date 头时返回 false，
+    // 调用方保持 urlTime=0，下次对话强制重新鉴权（原实现静默失败导致鉴权 URL 无效）
+    if (httpCode != HTTP_CODE_OK || serverDate.isEmpty())
+    {
+        Serial.println("WARN: 获取服务器时间失败，鉴权 URL 无效");
+        return false;
+    }
+    Date = serverDate;
+    Serial.println(Date);           // 输出获取到的Date字段到串口
+    return true;
 }
 
 String getUrl(String Spark_url, String host, String path, String Date)
@@ -587,8 +639,9 @@ void doubao()
                 // 如果解析没有错误
                 if (!error)
                 {
-                    const char *content = jsonResponse["choices"][0]["delta"]["content"];
-                    if (jsonResponse["choices"][0]["delta"]["content"] != "")
+                    // B2 修复：delta 无 content 字段时返回 nullptr，判空后再使用，防止 strlen(nullptr) 崩溃
+                    const char *content = jsonResponse["choices"][0]["delta"]["content"] | nullptr;
+                    if (content != nullptr && strlen(content) > 0)
                     {
                         const char *removeSet = "\n*$"; // 定义需要移除的符号集
                         // 计算新字符串的最大长度
@@ -599,7 +652,6 @@ void doubao()
 
                         // 将内容追加到Answer字符串中
                         Answer += cleanedContent;
-                        content = "";
                         // 释放分配的内存
                         delete[] cleanedContent;
                     }
@@ -679,19 +731,22 @@ void tongyi()
                 // 如果解析没有错误
                 if (!error)
                 {
-                    const char *content = jsonResponse["choices"][0]["delta"]["content"];
-                    const char *removeSet = "\n*$"; // 定义需要移除的符号集
-                    // 计算新字符串的最大长度
-                    int length = strlen(content) + 1;
-                    char *cleanedContent = new char[length];
-                    removeChars(content, cleanedContent, removeSet);
-                    Serial.println(cleanedContent);
+                    // B2 修复：delta 无 content 字段时返回 nullptr，判空后再使用，防止 strlen(nullptr) 崩溃
+                    const char *content = jsonResponse["choices"][0]["delta"]["content"] | nullptr;
+                    if (content != nullptr && strlen(content) > 0)
+                    {
+                        const char *removeSet = "\n*$"; // 定义需要移除的符号集
+                        // 计算新字符串的最大长度
+                        int length = strlen(content) + 1;
+                        char *cleanedContent = new char[length];
+                        removeChars(content, cleanedContent, removeSet);
+                        Serial.println(cleanedContent);
 
-                    // 将内容追加到Answer字符串中
-                    Answer += cleanedContent;
-                    content = "";
-                    // 释放分配的内存
-                    delete[] cleanedContent;
+                        // 将内容追加到Answer字符串中
+                        Answer += cleanedContent;
+                        // 释放分配的内存
+                        delete[] cleanedContent;
+                    }
 
                     if (jsonResponse["choices"][0]["finish_reason"] == "stop")
                     {
@@ -775,19 +830,22 @@ void chatgpt()
                     }
                     else
                     {
-                        const char *content = jsonResponse["choices"][0]["delta"]["content"];
-                        const char *removeSet = "\n*$"; // 定义需要移除的符号集
-                        // 计算新字符串的最大长度
-                        int length = strlen(content) + 1;
-                        char *cleanedContent = new char[length];
-                        removeChars(content, cleanedContent, removeSet);
-                        Serial.println(cleanedContent);
+                        // B2 修复：delta 无 content 字段时返回 nullptr，判空后再使用，防止 strlen(nullptr) 崩溃
+                        const char *content = jsonResponse["choices"][0]["delta"]["content"] | nullptr;
+                        if (content != nullptr && strlen(content) > 0)
+                        {
+                            const char *removeSet = "\n*$"; // 定义需要移除的符号集
+                            // 计算新字符串的最大长度
+                            int length = strlen(content) + 1;
+                            char *cleanedContent = new char[length];
+                            removeChars(content, cleanedContent, removeSet);
+                            Serial.println(cleanedContent);
 
-                        // 将内容追加到Answer字符串中
-                        Answer += cleanedContent;
-                        content = "";
-                        // 释放分配的内存
-                        delete[] cleanedContent;
+                            // 将内容追加到Answer字符串中
+                            Answer += cleanedContent;
+                            // 释放分配的内存
+                            delete[] cleanedContent;
+                        }
                     }
 
                     processResponse(status);

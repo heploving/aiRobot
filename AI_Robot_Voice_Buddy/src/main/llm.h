@@ -36,7 +36,8 @@ void checkLen();
 int trimToUtf8Boundary(const String &s, int maxBytes);
 
 // 讯飞鉴权：从百度响应头取时间 + HMAC-SHA256 生成鉴权 URL
-void getTimeFromServer();
+// 返回 false 表示取时间失败（调用方应保持 urlTime=0 强制下次重新鉴权）
+bool getTimeFromServer();
 String getUrl(String sparkUrl, String host, String path, String date);
 
 // 工具：过滤 LLM 回复中的无用符号
