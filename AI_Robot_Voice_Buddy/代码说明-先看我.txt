@@ -1,7 +1,6 @@
 AI_Robot Voice_Buddy 项目说明
 
-代码中只需要填写：自己在讯飞开放平台创建的应用的APPID、APISecret和APIKey，
-                 也可以修改llm的角色设定（在函数gen_params()中）
+代码中只需要填写：自己在讯飞开放平台创建的应用的APPID、APISecret和APIKey，也可以修改llm的角色设定（在函数gen_params()中）
 
 参考项目（原项目）链接：https://github.com/MetaWu2077/Esp32_VoiceChat_LLMs
 
