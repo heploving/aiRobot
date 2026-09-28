@@ -1,46 +1,7 @@
+#include "config.h"
 #include "Web_Scr_set.h"
 
-// 定义引脚
-#define key 0       //boot按键引脚
-#define led 48      //板载led引脚（GPIO8 已被 OLED SCL 占用）
-#define light 38    // 灯光引脚
-// 定义音频放大模块的I2S引脚定义
-#define I2S_DOUT 7  // DIN引脚
-#define I2S_BCLK 15 // BCLK引脚
-#define I2S_LRC 16  // LRC引脚
-
 int llm = 1;    // 大模型选择参数:0:豆包，1：讯飞星火，2：通义千问，3：ChatGPT
-
-// 选哪个模型，就填哪个模型的参数
-// 豆包大模型的参数
-String model1 = "";   // 在线推理接入点名称，必填
-const char* doubao_apiKey = "";     // 火山引擎API Key，必填
-String apiUrl = "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
-
-// 通义千问大模型的参数
-String model2 = "";
-const char* tongyi_apiKey = "";
-String apiUrl_tongyi = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"; // 通义千问的API地址
-
-// Chatgpt的参数
-String model3 = "";
-const char* openai_apiKey = "";
-String apiUrl_chatgpt = "https://aihubmix.com/v1/chat/completions"; // Chatgpt的API代理地址
-
-// 讯飞stt和大模型服务的参数
-String APPID = "57c3792c";                             // App ID,必填
-String APISecret = "YmZlOTk1NDhjYmFjYzk1N2I0MjRlYWUy"; // API Secret，必填
-String APIKey = "65a56f0fb36ded9cdb86817db855fbe0";    // API Key，必填
-String appId1 = APPID;
-String domain1 = "generalv3.5";    // 根据需要更改（3.5 响应更快；追求质量可换回 4.0Ultra）
-String websockets_server = "ws://spark-api.xf-yun.com/v3.5/chat";   // 根据需要更改
-String websockets_server1 = "ws://iat-api.xfyun.cn/v2/iat";
-// 讯飞stt语种设置
-String language = "zh_cn";     //zh_cn：中文（支持简单的英文识别）en_us：English
-
-// 角色设定
-String roleSet = "你是一个温柔的小女生，你的名字叫小白，你的性格可爱活泼，说话简短，同时温柔可爱有礼貌。";
-String roleSet1 = "你是一个温柔的小女生，你的名字叫小白，你的性格可爱活泼，说话简短，同时温柔可爱有礼貌。";
 
 // 定义一些全局变量
 bool ledstatus = true;          // 控制led闪烁
@@ -58,9 +19,6 @@ int cursorY = 0;
 //语音唤醒
 int awake_flag = 1;
 
-/*/ 创建动态JSON文档对象和数组
-StaticJsonDocument<2048> doc;
-JsonArray text = doc.to<JsonArray>();*/
 // 使用动态JSON文档存储历史对话信息占用的内存过多，故改用c++中的vector向量
 std::vector<String> text;
 
@@ -81,12 +39,10 @@ int syncShownBytes = 0;         // 已显示的字节数（整字符边界，只
 bool syncStarted = false;       // 音频是否已真正开始解码播放
 unsigned long syncStartMs = 0;  // 音频真正开始的时刻
 unsigned long syncReqMs = 0;    // 发起TTS请求的时刻（请求失败兜底用）
-int loopcount = 0;      //对话次数计数器
 int flag = 0;           //用来确保subAnswer1一定是大模型回答最开始的内容
 int conflag = 0;        //用于连续对话
 int await_flag = 1;     //待机标识
 int start_con = 0;      //标识是否开启了一轮对话
-int image_show = 0;
 
 using namespace websockets; // 使用WebSocket命名空间
 // 创建WebSocket客户端对象
@@ -101,7 +57,7 @@ Audio2 audio2(false, 3, I2S_NUM_1);
 // 指定使用哪个I2S端口。ESP32有两个I2S端口，I2S_NUM_0和I2S_NUM_1。可以根据需要选择不同的I2S端口。
 
 // 函数声明
-DynamicJsonDocument gen_params(const char *appid, const char *domain);
+DynamicJsonDocument gen_params(const char *appid, const char *domain, const char *role_set);
 DynamicJsonDocument gen_params_http(const char *model, const char *role_set);
 void processResponse(int status);
 void displayWrappedText(const string &text1, int x, int y, int maxWidth);
@@ -185,22 +141,11 @@ void StartConversation()
         // 从服务器获取当前时间
         getTimeFromServer();
         // 更新WebSocket连接的URL
-        url = getUrl(websockets_server, "spark-api.xf-yun.com", websockets_server.substring(25), Date);
-        url1 = getUrl(websockets_server1, "iat-api.xfyun.cn", "/v2/iat", Date);
+        url = getUrl(XF_SPARK_WS, XF_SPARK_HOST, XF_SPARK_PATH, Date);
+        url1 = getUrl(XF_IAT_WS, XF_IAT_HOST, XF_IAT_PATH, Date);
     }
     // 连接到WebSocket服务器1讯飞stt
     ConnServer1();
-}
-
-void imageshow()
-{
-    // OLED 屏无壁纸功能，仅保留音频循环轮询
-    for (int j = 0; j < 200; j++)
-    {
-        audio2.loop();
-        delay(10);
-    }
-    image_show = 0;
 }
 
 void setup()
@@ -210,17 +155,17 @@ void setup()
 
     // 配置引脚模式
     // 配置按键引脚为上拉输入模式，用于boot按键检测
-    pinMode(key, INPUT_PULLUP);
+    pinMode(KEY_PIN, INPUT_PULLUP);
 
     // 将led设置为输出模式
-    pinMode(led, OUTPUT);
+    pinMode(LED_PIN, OUTPUT);
     // 将light设置为输出模式
-    pinMode(light, OUTPUT);
+    pinMode(LIGHT_PIN, OUTPUT);
     // 将light初始化为低电平
-    digitalWrite(light, LOW);
+    digitalWrite(LIGHT_PIN, LOW);
 
     // 初始化屏幕
-    Wire.begin(41, 42);                  // OLED I2C: SDA=GPIO41, SCL=GPIO42（实际接线）
+    Wire.begin(OLED_SDA, OLED_SCL);     // OLED I2C（引脚见 config.h）
     // 扫描 I2C 总线，自动适配 OLED 地址（0x3C 或 0x3D）
     {
       bool addr3D = false;
@@ -279,8 +224,8 @@ void setup()
     // 从百度服务器获取当前时间
     getTimeFromServer();
     // 使用当前时间生成WebSocket连接的URL
-    url = getUrl(websockets_server, "spark-api.xf-yun.com", websockets_server.substring(25), Date);
-    url1 = getUrl(websockets_server1, "iat-api.xfyun.cn", "/v2/iat", Date);
+    url = getUrl(XF_SPARK_WS, XF_SPARK_HOST, XF_SPARK_PATH, Date);
+    url1 = getUrl(XF_IAT_WS, XF_IAT_HOST, XF_IAT_PATH, Date);
 
     if (result == 1)
     {
@@ -317,8 +262,8 @@ void loop()
 
 
     // 如果音频正在播放
-    if (audio2.isplaying == 1)  digitalWrite(led, HIGH);    // 点亮板载LED指示灯
-    else    digitalWrite(led, LOW);     // 熄灭板载LED指示灯
+    if (audio2.isplaying == 1)  digitalWrite(LED_PIN, HIGH);    // 点亮板载LED指示灯
+    else    digitalWrite(LED_PIN, LOW);     // 熄灭板载LED指示灯
 
     // 屏幕文字与语音同步显示：检测音频真正开始后，按播报进度逐字显示
     if (syncText != "")
@@ -359,26 +304,15 @@ void loop()
     }
 
     // 检测boot按键是否按下
-    if (digitalRead(key) == 0)
+    if (digitalRead(KEY_PIN) == 0)
     {
         conflag = 0;
-        loopcount++;
-        Serial.print("loopcount：");
-        Serial.println(loopcount);
         StartConversation();
     }
     // 连续对话
-    if (audio2.isplaying == 0 && Answer == "" && subindex == subAnswers.size() && musicplay == 0 && conflag == 1 && image_show == 0)
+    if (audio2.isplaying == 0 && Answer == "" && subindex == subAnswers.size() && musicplay == 0 && conflag == 1)
     {
-        loopcount++;
-        Serial.print("loopcount：");
-        Serial.println(loopcount);
         StartConversation();
-    }
-
-    if (audio2.isplaying == 1 && image_show == 1)
-    {
-        imageshow();
     }
 }
 
@@ -612,17 +546,6 @@ void getText(String role, String content, bool show)
         Serial.println(jsonStr);
     }
     
-    /*/ 将生成的JSON文档添加到全局变量text中
-    text.add(jsoncon);
-
-    // 序列化全局变量text中的内容为字符串
-    String serialized;
-    serializeJson(text, serialized);
-
-    // 输出序列化后的JSON字符串到串口
-    Serial.print("text: ");
-    Serial.println(serialized);*/
-
     // 清空临时JSON文档
     jsoncon.clear();
 
@@ -634,23 +557,11 @@ void getText(String role, String content, bool show)
         displayProgress(line, line.length());
     }
 
-    // 也可以使用格式化的方式输出JSON，以下代码被注释掉了
-    // serializeJsonPretty(text, Serial);
 }
 
 // 实时清理较早的历史对话记录
 void checkLen()
 {
-    /*Serial.print("text size:");
-    Serial.println(text.memoryUsage());
-    // 计算jsonVector占用的字节数
-    // 当JSON数组中的字符串总长度超过1600字节时，进入循环
-    if (text.memoryUsage() > 1600)
-    {
-        // 移除数组中的第一对问答
-        text.remove(0);
-        text.remove(0);
-    }*/
     size_t totalBytes = 0;
 
     // 计算vector中每个字符串的长度
@@ -665,8 +576,6 @@ void checkLen()
         Serial.println("totalBytes大于800,删除最开始的一对对话");
         text.erase(text.begin(), text.begin() + 2);
     }
-    // 函数没有返回值，直接修改传入的JSON数组
-    // return textArray; // 注释掉的代码，表明此函数不返回数组
 }
 
 DynamicJsonDocument gen_params(const char *appid, const char *domain, const char *role_set)
@@ -981,7 +890,7 @@ void onEventsCallback(WebsocketsEvent event, String data)
         Serial.println("Send message to server0!");
 
         // 生成连接参数的JSON文档
-        DynamicJsonDocument jsonData = gen_params(appId1.c_str(), domain1.c_str(), roleSet1.c_str());
+        DynamicJsonDocument jsonData = gen_params(XF_APPID, XF_SPARK_DOMAIN, ROLE_SET);
 
         // 将JSON文档序列化为字符串
         String jsonString;
@@ -1265,12 +1174,12 @@ void onMessageCallback1(WebsocketsMessage message)
             }
             else if (askquestion.indexOf("开") > -1 && askquestion.indexOf("灯") > -1)
             {
-                digitalWrite(light, HIGH);
+                digitalWrite(LIGHT_PIN, HIGH);
                 conflag = 1;
             }
             else if (askquestion.indexOf("关") > -1 && askquestion.indexOf("灯") > -1)
             {
-                digitalWrite(light, LOW);
+                digitalWrite(LIGHT_PIN, LOW);
                 conflag = 1;
             }
             else if (askquestion.indexOf("换") > -1 && askquestion.indexOf("模型") > -1)
@@ -1631,19 +1540,6 @@ void onMessageCallback1(WebsocketsMessage message)
                 }
                 preferences.end();
             }
-            else if (askquestion.indexOf("放") > -1 && (askquestion.indexOf("图片") > -1 || askquestion.indexOf("幻灯片") > -1))
-            {
-                u8g2.clearBuffer();
-                u8g2.sendBuffer();
-                u8g2.setCursor(0, 0);
-                getText("user", askquestion);
-                Answer = "这就开始放映主人喜欢的图片。";
-                speakAndDisplay(Answer);
-                getText("assistant", Answer, false);
-                Answer = "";
-                image_show = 1;
-                conflag = 1;
-            }
             else    // 处理一般的问答请求
             {
                 u8g2.clearBuffer();
@@ -1731,7 +1627,7 @@ void onEventsCallback1(WebsocketsEvent event, String data)
         while (1)
         {
             // 待机状态（语音唤醒状态）也可通过boot键启动
-            if (digitalRead(key) == 0 && await_flag == 1)
+            if (digitalRead(KEY_PIN) == 0 && await_flag == 1)
             {
                 start_con = 1;      //对话开始标识
                 await_flag = 0;
@@ -1842,11 +1738,11 @@ void onEventsCallback1(WebsocketsEvent event, String data)
                 data["encoding"] = "raw";
 
                 JsonObject common = doc.createNestedObject("common");
-                common["app_id"] = appId1.c_str();
+                common["app_id"] = XF_APPID;
 
                 JsonObject business = doc.createNestedObject("business");
                 business["domain"] = "iat";
-                business["language"] = language.c_str();
+                business["language"] = STT_LANGUAGE;
                 business["accent"] = "mandarin";
                 // 不使用动态修正
                 // business["vinfo"] = 1;
@@ -1985,7 +1881,7 @@ int wifiConnect()
             while (WiFi.status() != WL_CONNECTED)
             {
                 // 闪烁板载LED以指示连接状态
-                digitalWrite(led, ledstatus);
+                digitalWrite(LED_PIN, ledstatus);
                 ledstatus = !ledstatus;
                 count++;
 
@@ -2046,8 +1942,6 @@ void getTimeFromServer()
     Date = http.header("Date");     // 从HTTP响应头中获取Date字段
     Serial.println(Date);           // 输出获取到的Date字段到串口
     http.end();                     // 结束HTTP连接
-
-    // delay(50); // 根据实际情况可以添加延时，以便避免频繁请求
 }
 
 String getUrl(String Spark_url, String host, String path, String Date)
@@ -2063,13 +1957,13 @@ String getUrl(String Spark_url, String host, String path, String Date)
     mbedtls_md_context_t ctx;                               // HMAC上下文
     mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;          // 使用SHA256哈希算法
     const size_t messageLength = signature_origin.length(); // 签名原始字符串的长度
-    const size_t keyLength = APISecret.length();            // 密钥的长度
+    const size_t keyLength = strlen(XF_API_SECRET);         // 密钥的长度
 
     // 初始化HMAC上下文
     mbedtls_md_init(&ctx);
     mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 1);
     // 设置HMAC密钥
-    mbedtls_md_hmac_starts(&ctx, (const unsigned char *)APISecret.c_str(), keyLength);
+    mbedtls_md_hmac_starts(&ctx, (const unsigned char *)XF_API_SECRET, keyLength);
     // 更新HMAC上下文
     mbedtls_md_hmac_update(&ctx, (const unsigned char *)signature_origin.c_str(), messageLength);
     // 完成HMAC计算
@@ -2086,7 +1980,7 @@ String getUrl(String Spark_url, String host, String path, String Date)
     Date.replace(":", "%3A");
 
     // 构建Authorization原始字符串
-    String authorization_origin = "api_key=\"" + APIKey + "\", algorithm=\"hmac-sha256\", headers=\"host date request-line\", signature=\"" + signature_sha_base64 + "\"";
+    String authorization_origin = "api_key=\"" + String(XF_API_KEY) + "\", algorithm=\"hmac-sha256\", headers=\"host date request-line\", signature=\"" + signature_sha_base64 + "\"";
 
     // 将Authorization原始字符串进行Base64编码
     String authorization = base64::encode(authorization_origin);
@@ -2152,16 +2046,16 @@ void doubao()
 {
     HTTPClient http;
     http.setTimeout(20000);     // 设置请求超时时间
-    http.begin(apiUrl);
+    http.begin(DOUBAO_URL);
     http.addHeader("Content-Type", "application/json");
-    String token_key = String("Bearer ") + doubao_apiKey;
+    String token_key = String("Bearer ") + DOUBAO_API_KEY;
     http.addHeader("Authorization", token_key);
 
     // 向串口输出提示信息
     Serial.println("Send message to doubao!");
 
     // 生成连接参数的JSON文档
-    DynamicJsonDocument jsonData = gen_params_http(model1.c_str(), roleSet.c_str());
+    DynamicJsonDocument jsonData = gen_params_http(DOUBAO_MODEL, ROLE_SET);
 
     // 将JSON文档序列化为字符串
     String jsonString;
@@ -2227,34 +2121,6 @@ void doubao()
                 }
             }
         }
-        /*/ 非流式调用，不推荐，因为没有足够大小的DynamicJsonDocument来存储一次性返回的长文本回复
-        String response = http.getString();
-        http.end();
-        Serial.println(response);
-
-        // Parse JSON response
-        int status = 0;
-        DynamicJsonDocument jsonDoc(1024);
-        deserializeJson(jsonDoc, response);
-        const char *content = jsonDoc["choices"][0]["message"]["content"];
-        const char *removeSet = "\n*$"; // 定义需要移除的符号集
-        // 计算新字符串的最大长度
-        int length = strlen(content) + 1;
-        char *cleanedContent = new char[length];
-        removeChars(content, cleanedContent, removeSet);
-        Serial.println(cleanedContent);
-
-        // 将内容追加到Answer字符串中
-        Answer += cleanedContent;
-        content = "";
-        // 释放分配的内存
-        delete[] cleanedContent;
-        while (Answer != "")
-        {
-            if (Answer.length() < 180)
-                status = 2;
-            processResponse(status);
-        }*/
         return;
     } 
     else 
@@ -2271,8 +2137,8 @@ void tongyi()
 {
     HTTPClient http;
     http.setTimeout(20000);     // 设置请求超时时间
-    http.begin(apiUrl_tongyi);
-    String token_key = String("Bearer ") + tongyi_apiKey;
+    http.begin(TONGYI_URL);
+    String token_key = String("Bearer ") + TONGYI_API_KEY;
     http.addHeader("Authorization", token_key);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-DashScope-SSE", "enable");
@@ -2281,7 +2147,7 @@ void tongyi()
     Serial.println("Send message to tongyiqianwen!");
 
     // 生成连接参数的JSON文档
-    DynamicJsonDocument jsonData = gen_params_http(model2.c_str(), roleSet1.c_str());
+    DynamicJsonDocument jsonData = gen_params_http(TONGYI_MODEL, ROLE_SET);
 
     // 将JSON文档序列化为字符串
     String jsonString;
@@ -2361,16 +2227,16 @@ void chatgpt()
 {
     HTTPClient http;
     http.setTimeout(20000);     // 设置请求超时时间
-    http.begin(apiUrl_chatgpt);
+    http.begin(CHATGPT_URL);
     http.addHeader("Content-Type", "application/json");
-    String token_key = String("Bearer ") + openai_apiKey;
+    String token_key = String("Bearer ") + CHATGPT_API_KEY;
     http.addHeader("Authorization", token_key);
 
     // 向串口输出提示信息
     Serial.println("Send message to chatgpt!");
 
     // 生成连接参数的JSON文档
-    DynamicJsonDocument jsonData = gen_params_http(model3.c_str(), roleSet1.c_str());
+    DynamicJsonDocument jsonData = gen_params_http(CHATGPT_MODEL, ROLE_SET);
 
     // 将JSON文档序列化为字符串
     String jsonString;
