@@ -81,6 +81,7 @@
 #define NOISE_FLOOR 300.0f         // 噪声门限下限
 #define NOISE_RMS_SUPPRESS 1000    // 录音初期噪声抑制 RMS 阈值（低于此值按 8.6 处理）
 #define AMBIENT_SAMPLE_COUNT 20    // 开机底噪校准采样帧数
+#define AMBIENT_TRACK_START_FRAME 20 // 录音前 20 帧为初期抑制窗口，之后才开始底噪跟踪
 #define SILENCE_TIMEOUT_FRAMES 250 // 10 秒静音超时（250 帧 × 40ms）
 #define END_SILENCE_FRAMES 16      // 静音 16 帧（640ms）发送结束标志
 #define VOICE_START_FRAMES 8       // 有声起始帧数

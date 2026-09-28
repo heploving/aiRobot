@@ -32,6 +32,9 @@ public:
   const char *frame() const { return wavData[0]; }
 };
 
+// 全局录音对象（定义于 main.cpp）
+extern Recorder recorder;
+
 // 计算 PCM 帧 RMS 值（噪声门限/静音检测用，16bit 小端样本）
 float calculateRMS(uint8_t *buffer, int bufferSize);
 

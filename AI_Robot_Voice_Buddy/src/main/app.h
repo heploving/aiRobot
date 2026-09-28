@@ -56,8 +56,9 @@ extern unsigned long syncStartMs, syncReqMs;
 // —— 跨模块协调函数 ——
 void voicePlay();                    // 播放下一段分段回答/音乐，定义于 main.cpp
 void speakAndDisplay(String text);   // 发起 TTS 播报并启动文字同步显示，定义于 main.cpp
-void response();                     // 直接播报 Answer 并清空，定义于 main.cpp
+void response();                     // 直接播报 Answer 并清空，定义于 stt.cpp
 bool keyPressed();                   // boot 键消抖检测（500ms 节流），定义于 main.cpp
 void setVolumeTo(int vol);           // 钳制音量并应用，定义于 commands.cpp
+void stopPlayback();                 // 打断当前播放（stopSong + isplaying=0 封装），定义于 main.cpp
 
 #endif // APP_H
