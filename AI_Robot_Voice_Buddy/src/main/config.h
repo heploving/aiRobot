@@ -11,6 +11,14 @@
  */
 #pragma once
 
+// 私密凭据（XF_APPID/XF_API_SECRET/XF_API_KEY 及各模型名/Key）不入库：
+// 复制 src/main/secrets.example.h 为 src/main/secrets.h 并填写真实凭据
+#if __has_include("secrets.h")
+#include "secrets.h"
+#else
+#error "缺少 secrets.h：请复制 src/main/secrets.example.h 为 src/main/secrets.h 并填写真实凭据"
+#endif
+
 // ==================== 硬件引脚（以实机接线为准） ====================
 #define KEY_PIN 0      // boot 按键引脚（上拉输入）
 #define LED_PIN 48     // 板载 LED 引脚（GPIO8 已被 OLED SCL 占用）
@@ -30,26 +38,17 @@
 #define MIC_I2S_LRC 4   // WS 引脚
 #define MIC_I2S_DIN 6   // SD 引脚
 
-// ==================== 大模型参数（用哪个模型就填哪个） ====================
+// ==================== 大模型参数（凭据在 secrets.h，这里只放非敏感的 API 地址） ====================
 // 豆包大模型（火山方舟）
-#define DOUBAO_MODEL ""                                              // 在线推理接入点名称，必填
-#define DOUBAO_API_KEY ""                                            // 火山引擎 API Key，必填
 #define DOUBAO_URL "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
 
 // 通义千问大模型（阿里云百炼）
-#define TONGYI_MODEL ""                                              // 模型名称，必填
-#define TONGYI_API_KEY ""                                            // API Key，必填
 #define TONGYI_URL "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
 // ChatGPT（aihubmix 代理）
-#define CHATGPT_MODEL ""                                             // 模型名称，必填
-#define CHATGPT_API_KEY ""                                           // API Key，必填
 #define CHATGPT_URL "https://aihubmix.com/v1/chat/completions"
 
-// ==================== 讯飞服务参数（必填） ====================
-#define XF_APPID "57c3792c"                              // 讯飞 App ID（32 位十六进制串）
-#define XF_API_SECRET "YmZlOTk1NDhjYmFjYzk1N2I0MjRlYWUy"  // API Secret（32 位 base64 形串，注意与 APIKey 勿填反）
-#define XF_API_KEY "65a56f0fb36ded9cdb86817db855fbe0"    // API Key
+// ==================== 讯飞服务参数（凭据在 secrets.h） ====================
 
 // 星火大模型 WebSocket（generalv3.5 响应更快；追求质量可换 4.0Ultra）
 #define XF_SPARK_DOMAIN "generalv3.5"

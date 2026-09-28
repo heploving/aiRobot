@@ -4,3 +4,6 @@
 .vscode/launch.json
 .vscode/ipch
 .vscode/
+
+# 私密凭据文件（复制 secrets.example.h 为 secrets.h 并填写真实凭据，勿提交）
+src/main/secrets.h

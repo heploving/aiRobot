@@ -91,7 +91,8 @@ ESP32连接网络后，进行语音唤醒或者按下板载的boot键即可开�
 | 文件 | 职责 |
 |---|---|
 | main.cpp | 应用壳：setup/loop、全局状态定义、语音播放调度、打字机同步显示 |
-| config.h | **唯一配置点**：硬件引脚、大模型凭据、角色设定、全部时序常量 |
+| config.h | **唯一配置点**：硬件引脚、角色设定、全部时序常量（凭据引入 secrets.h） |
+| secrets.h | 私密凭据（**不入库**，从 secrets.example.h 复制填写） |
 | app.h | 跨模块接口中枢：全局状态 extern 集中声明 |
 | display.h/.cpp | OLED 显示：初始化、自动换行、打字机进度显示、音量显示 |
 | llm.h/.cpp | 大模型：讯飞星火 WebSocket + 豆包/通义/ChatGPT 统一 HTTP-SSE 流式调用、对话历史 |
@@ -104,13 +105,13 @@ ESP32连接网络后，进行语音唤醒或者按下板载的boot键即可开�
 | mic_i2s.h/.cpp | 麦克风 I2S 驱动封装 |
 | Audio2.h/.cpp | 上游 ESP32-audioI2S 裁剪版（仅 MP3 解码），勿改 |
 
-> 所有大模型参数与凭据都在 [src/config.h](src/config.h) 中填写，改代码配置只需改这一个文件。
+> 硬件引脚、角色设定、时序常量都在 [src/config.h](src/config.h) 中填写；**大模型凭据在 [src/secrets.h](src/secrets.h) 中填写（该文件不入库）**。
 
 # 项目部署教程
 - 下载vscode和platformIO插件
 - 开通讯飞相关服务（可选：开通豆包大模型服务）
 - 将项目克隆到本地，在vscode中打开整个文件夹，然后等待依赖库下载完毕（右下角的状态栏显示下载进度）
-- 填写 [src/config.h](src/config.h) 中的讯飞账号参数（XF_APPID/XF_API_SECRET/XF_API_KEY；可选：填写豆包/通义/ChatGPT 的模型与 Key）
+- 复制 [src/main/secrets.example.h](src/main/secrets.example.h) 为 src/main/secrets.h，填写讯飞账号参数（XF_APPID/XF_API_SECRET/XF_API_KEY；可选：填写豆包/通义/ChatGPT 的模型与 Key）。该文件已被 .gitignore 忽略，不会提交到仓库
 - 申请百度语音合成access_token（TTS发声必需）：
   1. 注册百度智能云（https://console.bce.baidu.com/），开通"短语音识别-在线合成"服务（个人实名后有免费额度）
   2. 创建应用，获得API Key和Secret Key
