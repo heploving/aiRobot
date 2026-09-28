@@ -1,6 +1,6 @@
 #include "config.h"
 #include "app.h"
-#include "Web_Scr_set.h"
+#include "websetup.h"
 #include "recorder.h"
 #include "display.h"
 #include "llm.h"
@@ -51,6 +51,9 @@ int flag = 0;           //用来确保subAnswer1一定是大模型回答最开�
 int conflag = 0;        //用于连续对话
 int await_flag = 1;     //待机标识
 int start_con = 0;      //标识是否开启了一轮对话
+
+// 应用级 NVS 存储对象（wifi_store/music_store，各模块通过 app.h 的 extern 使用）
+Preferences preferences;
 
 // 创建音频对象
 Recorder recorder;
