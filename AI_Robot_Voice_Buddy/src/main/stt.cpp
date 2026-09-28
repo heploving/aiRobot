@@ -247,15 +247,13 @@ void onMessageCallback1(WebsocketsMessage message)
                 response();     //屏幕显示Answer以及语音播放
                 conflag = 1;
             }
-            else if (conStatus == 1)
+            else if (conStatus == 1 || mainStatus == 1 ||
+                     ((askquestion.indexOf("听") > -1 || askquestion.indexOf("放") > -1) &&
+                      (askquestion.indexOf("歌") > -1 || askquestion.indexOf("音乐") > -1) &&
+                      askquestion.indexOf("九歌") == -1))
             {
-                // 连续播放音乐状态下的指令处理（含一般问答兜底）
-                handleMusicInConStatus();
-            }
-            else if (((askquestion.indexOf("听") > -1 || askquestion.indexOf("放") > -1) && (askquestion.indexOf("歌") > -1 || askquestion.indexOf("音乐") > -1) && askquestion.indexOf("九歌") == -1) || mainStatus == 1)
-            {
-                // 播放音乐入口指令处理
-                handleMusicEntry();
+                // 音乐指令（连续播放模式 / 播放入口），内部按入口区分文案
+                handleMusicCommand();
             }
             else    // 处理一般的问答请求
             {
