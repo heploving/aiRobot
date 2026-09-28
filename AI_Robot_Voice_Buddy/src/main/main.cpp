@@ -223,6 +223,10 @@ void loop()
     {
         awake_flag = 1;
         StartConversation();
+        // 连接失败时重置标志，下一轮 loop 重试，
+        // 避免一次网络抖动让唤醒永久失效（connect() 同步完成，available() 即时准确）
+        if (!webSocketClient1.available())
+            awake_flag = 0;
     }
 
     // 检测boot按键是否按下（B11 修复：keyPressed 带 500ms 消抖，长按/抖动不再反复触发）

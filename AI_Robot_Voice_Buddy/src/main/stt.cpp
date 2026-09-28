@@ -32,8 +32,10 @@ void StartConversation()
 {
     askquestion = "";
     Serial.printf("Start recognition\r\n\r\n");
-    // 如果距离上次鉴权超过4分钟（差值比较，防 millis 回绕）
-    if ((unsigned long)(millis() - urlTime) >= AUTH_REFRESH_MS)
+    // 如果距离上次鉴权超过4分钟（差值比较，防 millis 回绕）；
+    // url 为空表示开机取时间失败（如配网后重启时路由器未就绪），立即重新鉴权，
+    // 否则首次唤醒会因鉴权 URL 无效而静默失效
+    if (url.isEmpty() || (unsigned long)(millis() - urlTime) >= AUTH_REFRESH_MS)
     {
         // 从服务器获取当前时间并更新鉴权 URL
         // （B10 修复：失败时保持 urlTime=0，下次对话强制重新鉴权）
