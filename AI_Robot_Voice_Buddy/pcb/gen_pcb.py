@@ -23,7 +23,7 @@ from collections import defaultdict
 import pcbnew
 
 BOARD_W = 62.0
-BOARD_H = 64.0
+BOARD_H = 68.0
 FPC = os.environ.get("KICAD_FOOTPRINTS", "/usr/share/kicad/footprints")
 
 MM = pcbnew.FromMM
@@ -100,13 +100,15 @@ J3 = fp("Connector_PinSocket_2.54mm", "PinSocket_1x19_P2.54mm_Vertical", "J3", 3
 J2 = fp("Connector_PinSocket_2.54mm", "PinSocket_1x06_P2.54mm_Vertical", "J2", 6.5, 2.0, 90.0)
 J4 = fp("Connector_PinSocket_2.54mm", "PinSocket_1x05_P2.54mm_Vertical", "J4", 50.0, 8.0)
 J5 = fp("Connector_PinSocket_2.54mm", "PinSocket_1x04_P2.54mm_Vertical", "J5", 50.0, 26.0)
-J6 = fp("Connector_PinHeader_2.54mm", "PinHeader_1x02_P2.54mm_Vertical", "J6", 14.0, 58.0)
-SW1 = fp("Button_Switch_THT", "SW_PUSH_6mm", "SW1", 26.0, 58.0)
-D1 = fp("LED_THT", "LED_D5.0mm", "D1", 19.0, 58.0)
-R1 = fp("Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal", "R1", 43.0, 58.0)
+J6 = fp("Connector_PinHeader_2.54mm", "PinHeader_1x02_P2.54mm_Vertical", "J6", 14.0, 62.0)
+SW1 = fp("Button_Switch_THT", "SW_PUSH_6mm", "SW1", 26.0, 62.0)
+D1 = fp("LED_THT", "LED_D5.0mm", "D1", 19.0, 62.0)
+R1 = fp("Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal", "R1", 43.0, 62.0)
 C1 = fp("Capacitor_THT", "CP_Radial_D6.3mm_P2.50mm", "C1", 50.0, 45.0, 180.0)
 C2 = fp("Capacitor_THT", "C_Disc_D5.0mm_W2.5mm_P2.50mm", "C2", 43.0, 42.0, 180.0)
-for (x, y) in [(4, 4), (58, 4), (4, 60), (58, 60)]:
+C3 = fp("Capacitor_THT", "C_Disc_D5.0mm_W2.5mm_P2.50mm", "C3", 18.0, 5.5)
+C4 = fp("Capacitor_THT", "C_Disc_D5.0mm_W2.5mm_P2.50mm", "C4", 39.5, 35.0, 90.0)
+for (x, y) in [(4, 4), (58, 4), (4, 64), (58, 64)]:
     h = fp("MountingHole", "MountingHole_3.2mm_M3", "H", x, y)
     h.Reference().SetVisible(False)   # 隐藏位号丝印，避免出板边
 
@@ -158,6 +160,8 @@ connect_all(SW1, 2, "GND")
 # 滤波电容
 connect(C1, 1, "5V");  connect(C1, 2, "GND")
 connect(C2, 1, "5V");  connect(C2, 2, "GND")
+connect(C3, 1, "3V3"); connect(C3, 2, "GND")   # INMP441 去耦
+connect(C4, 1, "3V3"); connect(C4, 2, "GND")   # OLED 去耦
 # 喇叭端子 J6 不接网络（飞线接 MAX98357 模块 SPK± 焊盘）
 
 # ==================== 走线 ====================
@@ -175,19 +179,39 @@ path(F, 0.3, [pt(J1, 7), (17, pt(J1, 7)[1]), (17, 14.35), (50, 14.35), (50, 15.6
 path(F, 0.3, [pt(J1, 8), (18, pt(J1, 8)[1]), (18, 16.89), (50, 16.89), (50, 18.16)], "AMP_LRC")
 # ---- 正面：OLED-SCL、LIGHT、LED_A、KEY ----
 path(F, 0.3, [pt(J3, 7), (37, pt(J3, 7)[1]), (37, 31.08), pt(J5, 3)], "OLED_SCL")
-path(F, 0.3, [pt(J3, 11), (38, pt(J3, 11)[1]), (38, 58), pt(R1, 1)], "LIGHT")
-path(F, 0.3, [pt(R1, 2), (pt(R1, 2)[0], 60), (pt(D1, 1)[0], 60), pt(D1, 1)], "LED_A")
-path(F, 0.3, [pt(J3, 15), (31, pt(J3, 15)[1]), (31, 58), (32.5, 58)], "KEY")
-path(F, 0.3, [(26, 58), (26, 55), (32.5, 55), (32.5, 58)], "KEY")                     # 左触片桥接
+path(F, 0.3, [pt(J3, 11), (36.5, pt(J3, 11)[1]), (36.5, 62), pt(R1, 1)], "LIGHT")
+path(F, 0.3, [pt(R1, 2), (pt(R1, 2)[0], 64), (pt(D1, 1)[0], 64), pt(D1, 1)], "LED_A")
+path(F, 0.3, [pt(J3, 15), (31, pt(J3, 15)[1]), (31, 62), (32.5, 62)], "KEY")
+path(F, 0.3, [(26, 62), (26, 59), (32.5, 59), (32.5, 62)], "KEY")                     # 左触片桥接
 # ---- 背面：麦克风 SD、3V3、5V、OLED-SDA ----
 path(B, 0.3, [pt(J2, 2), (pt(J2, 2)[0], 0.65), (21.9, 0.65), (21.9, 19.43), (12, 19.43), pt(J1, 5)], "MIC_SD")
 path(B, 0.3, [pt(J1, 1), (12, 6.5), (pt(J2, 5)[0], 6.5), pt(J2, 5)], "3V3")
 path(B, 0.3, [pt(J2, 5), (pt(J2, 5)[0], 16.89), (10.6, 16.89), (10.6, 22), (36.5, 22), (36.5, 24), (48.6, 24), (48.6, 28.54), pt(J5, 2)], "3V3")
+path(B, 0.3, [pt(C3, 1), (17.3, pt(C3, 1)[1]), (17.3, 2), pt(J2, 5)], "3V3")   # C3 接 INMP441 VDD
+path(B, 0.3, [pt(C4, 1), (pt(C4, 1)[0], 37.2), (33.2, 37.2), (33.2, 21.97), (36.5, 21.97), (36.5, 22)], "3V3")   # C4 绕 J3 间隙接 3V3 走廊
 path(B, 0.5, [pt(J3, 2), (37, pt(J3, 2)[1]), (37, 6.5), (54.5, 6.5), (54.5, 8), pt(J4, 1)], "5V")
 path(B, 0.5, [(54.5, 8), (54.5, 45), (50, 45), (50, 42), pt(C2, 1)], "5V")
 path(B, 0.3, [pt(C1, 2), (41, pt(C1, 2)[1])], "GND")   # 缝合：C1- 接入主铜皮
 path(B, 0.3, [(10.9, 14.35), (14, 14.35)], "GND")    # 缝合：穿过 J1 间隙 y=14.35 打通孤岛
 path(B, 0.3, [pt(J3, 8), (41, pt(J3, 8)[1]), (41, 33.62), pt(J5, 4)], "OLED_SDA")
+
+# ==================== GND 缝合过孔 ====================
+def gnd_via(x, y):
+    v = pcbnew.PCB_VIA(board)
+    v.SetPosition(P(x, y))
+    v.SetDrill(MM(0.4))
+    v.SetWidth(MM(0.8))
+    v.SetNet(net("GND"))
+    board.Add(v)
+# 板边缝合（避开安装孔与器件）
+for yy in [13, 20, 27, 34, 41, 48, 55]:
+    gnd_via(3, yy); gnd_via(59, yy)
+for xx in [24, 32, 40, 48]:
+    gnd_via(xx, 3); gnd_via(xx, 65)
+gnd_via(8, 65)
+# 孤岛缝合链：B.Cu 孤岛 -> 过孔 -> F.Cu 短走线 -> J2.4（GND 焊盘回到主铜皮）
+gnd_via(14.5, 12.5)
+path(F, 0.3, [(14.5, 12.5), (14.12, 12.5), pt(J2, 4)], "GND")
 
 # ==================== 背面整板 GND 覆铜 ====================
 z = pcbnew.ZONE(board)
@@ -207,13 +231,13 @@ text("Voice_Buddy 盾板", 24, 3, 1.6)
 text("INMP441", 7.0, 5.5)
 text("MAX98357", 46.5, 20.5)
 text("OLED", 46.5, 35.5)
-text("SPK", 13.0, 60.8)
-text("KEY", 24.0, 60.2)
-text("LED", 19.0, 61.0)
-text("GPIO38-LED / GPIO0-KEY", 24.0, 63.3, 0.9)
+text("SPK", 13.0, 64.8)
+text("KEY", 24.0, 65.0)
+text("LED", 19.0, 65.0)
+text("GPIO38-LED / GPIO0-KEY", 24.0, 67.3, 0.9)
 text("J1:1=3V3  J3:1=GND 2=5V", 12.0, 62.8, 0.9)
 text("喇叭飞线: MAX98357模块 SPK+/- -> J6", 24.0, 34.0, 0.9)
-text("USB 口朝下插接 DevKitC-1", 24.0, 47.0, 0.9)
+text("USB 口朝下插接 DevKitC-1（底排元件已让位）", 24.0, 47.0, 0.9)
 
 # ==================== 填充覆铜、保存、连通性自检 ====================
 pcbnew.ZONE_FILLER(board).Fill(board.Zones())
